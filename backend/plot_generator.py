@@ -1,7 +1,11 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import polars as pl
+import logging
 from typing import List, Dict, Any
+import config
+
+logger = logging.getLogger(__name__)
 
 
 def generate_plot(
@@ -12,9 +16,53 @@ def generate_plot(
     plot_settings: Dict[str, Any],
 ) -> plt.Figure:
     """
-    Generates a plot for a selected entry's monthly driver profile with customizable settings.
+    Generate a plot for a selected entry's monthly driver profile.
+
+    Args:
+        df: DataFrame containing the aggregated data
+        entry_index: Index of the selected entry in the DataFrame
+        selected_entry_label: Label for the selected entry to display in title
+        grouping_cols: Column names used for grouping in the aggregation
+        plot_settings: Dictionary containing plot customization options
+
+    Returns:
+        plt.Figure: Matplotlib figure object containing the generated plot
     """
-    figure = plt.Figure(figsize=(10, 6), dpi=100)
+    # Guard against invalid entry_index
+    if not 0 <= entry_index < len(df):
+        figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
+        ax = figure.add_subplot(111)
+        ax.text(
+            0.5,
+            0.5,
+            "Invalid entry index",
+            ha="center",
+            va="center",
+            fontsize=12,
+            transform=ax.transAxes,
+        )
+        ax.set_title("Error")
+        figure.tight_layout()
+        return figure
+
+    # Guard against plotting the "GRAND TOTAL" row
+    if grouping_cols and df[grouping_cols[0]][entry_index] == "GRAND TOTAL":
+        figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
+        ax = figure.add_subplot(111)
+        ax.text(
+            0.5,
+            0.5,
+            "Cannot plot GRAND TOTAL row",
+            ha="center",
+            va="center",
+            fontsize=12,
+            transform=ax.transAxes,
+        )
+        ax.set_title("Plotting Not Applicable")
+        figure.tight_layout()
+        return figure
+
+    figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
     ax = figure.add_subplot(111)
 
     # Get monthly columns (exclude grouping columns and 'Total')
@@ -22,7 +70,9 @@ def generate_plot(
         col for col in df.columns if col not in grouping_cols and col != "Total"
     ]
 
-    values, valid_months = [], []
+    values: List[float] = []
+    valid_months: List[str] = []
+
     for month_col in month_cols:
         value = df[month_col][entry_index]
         if value is not None:
@@ -89,7 +139,11 @@ def generate_plot(
 
         # Truncate title if too long
         title = f"Monthly Driver Profile for: {selected_entry_label}"
-        truncated_title = title[:70] + "..." if len(title) > 70 else title
+        truncated_title = (
+            title[: config.MAX_TITLE_LENGTH] + "..."
+            if len(title) > config.MAX_TITLE_LENGTH
+            else title
+        )
         ax.set_title(truncated_title)
 
         # Display total sum in a text box

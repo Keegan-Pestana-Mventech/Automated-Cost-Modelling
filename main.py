@@ -10,7 +10,7 @@ def main():
         root.mainloop()
     except Exception as e:
         # Fallback for critical errors during initialization
-        print(f"❌ CRITICAL APPLICATION ERROR: {e}")
+        print(f"CRITICAL APPLICATION ERROR: {e}")
         tk.messagebox.showerror(
             "Critical Error",
             f"A critical error occurred and the application must close: {e}",
@@ -18,6 +18,6 @@ def main():
 
 
 if __name__ == "__main__":
-    print("🚀 Starting Excel Data Pipeline Processor...")
+    print("Starting Excel Data Pipeline Processor...")
     main()
-    print("🛑 Application has been closed.")
+    print("Application has been closed.")

@@ -25,6 +25,10 @@ class AppState:
 
         self.inspection_log: str = ""
 
+    def set_excel_file(self, filepath: Path):
+        """Update the Excel file path"""
+        self.excel_file = filepath
+
     def export_aggregated_data(self) -> Path:
         """Export final aggregated dataframe to CSV"""
         for file in self.output_directory.iterdir():

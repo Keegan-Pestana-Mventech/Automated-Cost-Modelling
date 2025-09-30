@@ -2,9 +2,11 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from typing import Dict, List, Callable, Optional
 from datetime import datetime
+
 import polars as pl
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import config
 
 
 class InspectionPanel(ttk.LabelFrame):
@@ -16,7 +18,7 @@ class InspectionPanel(ttk.LabelFrame):
         self.rowconfigure(0, weight=1)
 
         self.log_text = scrolledtext.ScrolledText(
-            self, height=12, width=100, font=("Consolas", 9), wrap=tk.WORD
+            self, height=12, width=100, font=config.FONT_CONFIG["log"], wrap=tk.WORD
         )
         self.log_text.grid(row=0, column=0, sticky="nsew")
 
@@ -65,14 +67,7 @@ class ColumnSelectionTabs(ttk.Notebook):
         self.checkboxes: Dict[str, Dict] = {}
         self.tab_widgets: Dict[str, Dict] = {}
 
-        sections = [
-            ("Location", "location", "Spatial identifiers (e.g., pit, strip, block)"),
-            ("Activity", "activity", "Work type or task (e.g., process, material)"),
-            ("Timing", "timing", "Date or scheduling columns (e.g., start/end date)"),
-            ("Drivers", "drivers", "Numeric quantities or metrics (e.g., tons, BCMs)"),
-        ]
-
-        for title, key, desc in sections:
+        for title, key, desc in config.COLUMN_CATEGORIES:
             tab = self._create_tab(title, key, desc)
             self.add(tab, text=title)
 
@@ -82,9 +77,12 @@ class ColumnSelectionTabs(ttk.Notebook):
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
 
-        ttk.Label(tab, text=description, font=("Arial", 10), wraplength=800).grid(
-            row=0, column=0, sticky="ew", pady=(0, 10)
-        )
+        ttk.Label(
+            tab,
+            text=description,
+            font=config.FONT_CONFIG["description"],
+            wraplength=800,
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
         search_frame = ttk.Frame(tab)
         search_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
@@ -119,8 +117,7 @@ class ColumnSelectionTabs(ttk.Notebook):
         }
 
         self.checkboxes[key] = {}
-        # Controls number of colomns in stage 2 screen
-        num_columns = 5
+        num_columns = config.COLUMN_SELECTION_GRID_COLUMNS
         for i, column in enumerate(self.columns):
             var = tk.BooleanVar()
             cb = ttk.Checkbutton(
@@ -147,7 +144,7 @@ class ColumnSelectionTabs(ttk.Notebook):
         for data in self.checkboxes[category_key].values():
             data["widget"].grid_remove()
 
-        num_columns = 4
+        num_columns = config.COLUMN_SELECTION_GRID_COLUMNS
         for i, column in enumerate(visible_columns):
             widget = self.checkboxes[category_key][column]["widget"]
             row, col = divmod(i, num_columns)
@@ -211,23 +208,8 @@ class PlotView(ttk.Frame):
         self.plot_figure: Optional[plt.Figure] = None
         self.plot_canvas: Optional[FigureCanvasTkAgg] = None
 
-        self.color_map = {
-            "Ocean Blue": "#2E86AB",
-            "Fuchsia": "#A23B72",
-            "Tangerine": "#F18F01",
-            "Crimson": "#C73E1D",
-            "Sky Blue": "#3F7CAC",
-            "Forest Green": "#2BA84A",
-        }
-
-        self.plot_settings = {
-            "plot_type": "line",
-            "color": self.color_map["Ocean Blue"],
-            "marker": "o",
-            "linewidth": 2,
-            "markersize": 6,
-            "grid": True,
-        }
+        self.color_map = config.PLOT_COLOR_MAP
+        self.plot_settings = config.DEFAULT_PLOT_SETTINGS.copy()
 
         self._create_controls()
         self._create_plot_area()
@@ -256,9 +238,9 @@ class PlotView(ttk.Frame):
         control_frame.grid(row=0, column=0, sticky="ew", pady=10)
         control_frame.columnconfigure(1, weight=1)
 
-        ttk.Label(control_frame, text="Select Entry:", font=("Arial", 11)).grid(
-            row=0, column=0, sticky="w", padx=(0, 10), pady=5
-        )
+        ttk.Label(
+            control_frame, text="Select Entry:", font=config.FONT_CONFIG["label"]
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
 
         self.entry_combo = ttk.Combobox(
             control_frame, values=self.entry_labels, state="readonly", width=60
@@ -269,22 +251,22 @@ class PlotView(ttk.Frame):
         if self.entry_labels:
             self.entry_combo.set(self.entry_labels[0])
 
-        ttk.Label(control_frame, text="Plot Type:", font=("Arial", 11)).grid(
-            row=0, column=2, sticky="w", padx=(20, 10), pady=5
-        )
+        ttk.Label(
+            control_frame, text="Plot Type:", font=config.FONT_CONFIG["label"]
+        ).grid(row=0, column=2, sticky="w", padx=(20, 10), pady=5)
         self.plot_type_combo = ttk.Combobox(
             control_frame,
             values=["line", "bar", "scatter", "step"],
             state="readonly",
             width=10,
         )
-        self.plot_type_combo.set("line")
+        self.plot_type_combo.set(self.plot_settings["plot_type"])
         self.plot_type_combo.grid(row=0, column=3, sticky="ew", pady=5, padx=(0, 10))
         self.plot_type_combo.bind(
             "<<ComboboxSelected>>", lambda e: self._update_plot_settings()
         )
 
-        ttk.Label(control_frame, text="Color:", font=("Arial", 11)).grid(
+        ttk.Label(control_frame, text="Color:", font=config.FONT_CONFIG["label"]).grid(
             row=1, column=0, sticky="w", padx=(0, 10), pady=5
         )
         self.color_combo = ttk.Combobox(
@@ -293,25 +275,30 @@ class PlotView(ttk.Frame):
             state="readonly",
             width=15,
         )
-        self.color_combo.set("Ocean Blue")
+        # Find key for default color value
+        default_color_name = next(
+            (k for k, v in self.color_map.items() if v == self.plot_settings["color"]),
+            list(self.color_map.keys())[0],
+        )
+        self.color_combo.set(default_color_name)
         self.color_combo.grid(row=1, column=1, sticky="w", pady=5, padx=(0, 10))
         self.color_combo.bind(
             "<<ComboboxSelected>>", lambda e: self._update_plot_settings()
         )
 
-        ttk.Label(control_frame, text="Line Width:", font=("Arial", 11)).grid(
-            row=1, column=2, sticky="w", padx=(20, 10), pady=5
-        )
+        ttk.Label(
+            control_frame, text="Line Width:", font=config.FONT_CONFIG["label"]
+        ).grid(row=1, column=2, sticky="w", padx=(20, 10), pady=5)
         self.linewidth_combo = ttk.Combobox(
             control_frame, values=["1", "2", "3", "4", "5"], state="readonly", width=5
         )
-        self.linewidth_combo.set("2")
+        self.linewidth_combo.set(str(self.plot_settings["linewidth"]))
         self.linewidth_combo.grid(row=1, column=3, sticky="w", pady=5, padx=(0, 10))
         self.linewidth_combo.bind(
             "<<ComboboxSelected>>", lambda e: self._update_plot_settings()
         )
 
-        ttk.Label(control_frame, text="Marker:", font=("Arial", 11)).grid(
+        ttk.Label(control_frame, text="Marker:", font=config.FONT_CONFIG["label"]).grid(
             row=2, column=0, sticky="w", padx=(0, 10), pady=5
         )
         self.marker_combo = ttk.Combobox(
@@ -320,28 +307,28 @@ class PlotView(ttk.Frame):
             state="readonly",
             width=8,
         )
-        self.marker_combo.set("o")
+        self.marker_combo.set(str(self.plot_settings["marker"]))
         self.marker_combo.grid(row=2, column=1, sticky="w", pady=5, padx=(0, 10))
         self.marker_combo.bind(
             "<<ComboboxSelected>>", lambda e: self._update_plot_settings()
         )
 
-        ttk.Label(control_frame, text="Marker Size:", font=("Arial", 11)).grid(
-            row=2, column=2, sticky="w", padx=(20, 10), pady=5
-        )
+        ttk.Label(
+            control_frame, text="Marker Size:", font=config.FONT_CONFIG["label"]
+        ).grid(row=2, column=2, sticky="w", padx=(20, 10), pady=5)
         self.markersize_combo = ttk.Combobox(
             control_frame,
             values=["4", "6", "8", "10", "12"],
             state="readonly",
             width=5,
         )
-        self.markersize_combo.set("6")
+        self.markersize_combo.set(str(self.plot_settings["markersize"]))
         self.markersize_combo.grid(row=2, column=3, sticky="w", pady=5, padx=(0, 10))
         self.markersize_combo.bind(
             "<<ComboboxSelected>>", lambda e: self._update_plot_settings()
         )
 
-        self.grid_var = tk.BooleanVar(value=True)
+        self.grid_var = tk.BooleanVar(value=self.plot_settings["grid"])
         grid_check = ttk.Checkbutton(
             control_frame,
             text="Show Grid",
@@ -356,7 +343,9 @@ class PlotView(ttk.Frame):
         marker = self.marker_combo.get()
         self.plot_settings = {
             "plot_type": self.plot_type_combo.get(),
-            "color": self.color_map.get(selected_color_name, "#2E86AB"),
+            "color": self.color_map.get(
+                selected_color_name, config.DEFAULT_PLOT_SETTINGS["color"]
+            ),
             "marker": None if marker == "None" else marker,
             "linewidth": int(self.linewidth_combo.get()),
             "markersize": int(self.markersize_combo.get()),
@@ -395,10 +384,16 @@ class PlotView(ttk.Frame):
         self.plot_canvas.draw()
 
     def export_plot(self):
-        """Export current plot as PNG file"""
+        """Export current plot as PNG file to the data/plots directory."""
         if not self.plot_figure:
             messagebox.showwarning("No Plot", "Please generate a plot first.")
             return
+
+        # Define the output directory using Path objects from config
+        output_dir = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR
+
+        # Create the directory if it doesn't exist
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         safe_entry = (
             self.entry_combo.get()[:30]
@@ -410,8 +405,11 @@ class PlotView(ttk.Frame):
             f"driver_plot_{safe_entry}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         )
 
+        # Construct the full file path
+        full_path = output_dir / filename
+
         try:
-            self.plot_figure.savefig(filename, dpi=300, bbox_inches="tight")
-            messagebox.showinfo("Plot Exported", f"Plot saved as: {filename}")
+            self.plot_figure.savefig(full_path, dpi=300, bbox_inches="tight")
+            messagebox.showinfo("Plot Exported", f"Plot saved as: {full_path}")
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export plot: {e}")
