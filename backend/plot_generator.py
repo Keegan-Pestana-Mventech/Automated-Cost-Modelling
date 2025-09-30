@@ -13,6 +13,7 @@ def generate_plot(
     entry_index: int,
     selected_entry_label: str,
     grouping_cols: List[str],
+    driver_col_name: str,
     plot_settings: Dict[str, Any],
 ) -> plt.Figure:
     """
@@ -23,6 +24,7 @@ def generate_plot(
         entry_index: Index of the selected entry in the DataFrame
         selected_entry_label: Label for the selected entry to display in title
         grouping_cols: Column names used for grouping in the aggregation
+        driver_col_name: The name of the driver column for the y-axis label.
         plot_settings: Dictionary containing plot customization options
 
     Returns:
@@ -132,7 +134,7 @@ def generate_plot(
 
         ax.set_xticks(x_positions)
         ax.set_xticklabels(valid_months, rotation=45, ha="right")
-        ax.set_ylabel("Driver Value")
+        ax.set_ylabel(driver_col_name)
 
         if grid_visible:
             ax.grid(True, linestyle="--", alpha=0.4)
