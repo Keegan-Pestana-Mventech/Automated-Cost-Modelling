@@ -373,6 +373,7 @@ class PlotView(ttk.Frame):
             entry_index=entry_index,
             selected_entry_label=selected_label,
             grouping_cols=self.grouping_cols,
+            driver_col_name=self.driver_col,
             plot_settings=self.plot_settings,
         )
 

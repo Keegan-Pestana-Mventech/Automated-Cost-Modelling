@@ -189,13 +189,12 @@ def aggregate_data(
     date_trunc_unit: Optional[str] = None
 ) -> pl.DataFrame:
     """
-    Perform time-series aggregation with monthly pivoting and summary statistics.
+    Perform time-series aggregation with monthly pivoting.
 
     Steps:
     1. Validate required columns exist
     2. Preprocess (parse dates, cast drivers, truncate to configured unit)
     3. Pivot values into monthly columns
-    4. Add row totals and a grand total row
 
     Args:
         df: Input DataFrame containing the data to aggregate
@@ -206,12 +205,10 @@ def aggregate_data(
                         If None, defaults to config.DATE_TRUNC_UNIT
 
     Returns:
-        pl.DataFrame: Pivoted DataFrame with monthly columns (format: "YYYY-MM"), 
-                     row totals, and a grand total row.
+        pl.DataFrame: Pivoted DataFrame with monthly columns (format: "YYYY-MM").
                      
-                     Note: If no valid data remains after preprocessing, returns a DataFrame
-                     with only grouping columns and a Total column (no month columns).
-                     This indicates all dates were invalid or missing.
+                     Note: If no valid data remains after preprocessing, returns an empty DataFrame
+                     with only grouping columns.
 
     Raises:
         ValueError: If required columns are missing from input DataFrame
@@ -239,7 +236,8 @@ def aggregate_data(
                 "No valid data after preprocessing. Returning empty DataFrame. "
                 "This typically means all dates were invalid or missing."
             )
-            return pl.DataFrame({col: [] for col in grouping_cols + ["Total"]})
+            # Return empty frame with just the grouping columns
+            return pl.DataFrame({col: [] for col in grouping_cols})
 
         # 3. Pivot to monthly columns
         pivoted = _pivot_monthly(df_transformed, grouping_cols)
@@ -264,11 +262,10 @@ def aggregate_data(
 
         pivoted = pivoted.select(grouping_cols + month_cols).fill_null(0)
 
-        # 4. Add totals
-        final_df = _calculate_totals(pivoted, grouping_cols, month_cols)
+        # 4. Totals are no longer added to the DataFrame per user request.
 
-        logger.info(f"Aggregation complete. Result shape: {final_df.shape}")
-        return final_df
+        logger.info(f"Aggregation complete. Result shape: {pivoted.shape}")
+        return pivoted
 
     except Exception as e:
         logger.error(f"An error occurred during data aggregation: {e}")

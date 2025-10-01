@@ -61,7 +61,7 @@ class ColumnSelectionStage:
 
         ttk.Button(
             controls,
-            text="Proceed to Aggregation →",
+            text="Proceed to Transformation →",
             command=self._validate_and_proceed,
         ).pack(side=tk.LEFT, padx=5)
 
@@ -170,7 +170,7 @@ class ColumnSelectionStage:
         )
 
     def _validate_and_proceed(self):
-        """Validate selections and proceed to aggregation setup"""
+        """Validate selections and proceed to transformation setup"""
         selected = self.column_tabs.get_selected_columns()
 
         if len(selected["timing"]) != 2:

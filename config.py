@@ -17,6 +17,7 @@ DEFAULT_COLUMN_SELECTIONS = {
     "activity": ["Excavation Type", "Material Type"],
     "timing": ["Start", "Finish"],
     "drivers": ["Linear Meters"],
+    "rate": ["Rate"],  # Added Rate category
 }
 
 # =============================================================================
@@ -25,6 +26,11 @@ DEFAULT_COLUMN_SELECTIONS = {
 # The time unit for truncating dates for monthly aggregation.
 # See polars documentation for options (e.g., "1mo", "1w", "1d").
 DATE_TRUNC_UNIT = "1mo"
+
+# Conversion factor for the 'Rate' column to its SI equivalent.
+# Example: If Rate is in $/short_ton, to get $/tonne, multiply by (1 / 0.907185) ≈ 1.10231.
+# Set to 1.0 if no conversion is needed.
+RATE_SI_CONVERSION_FACTOR = 1.10231
 
 
 # =============================================================================
@@ -101,6 +107,7 @@ COLUMN_CATEGORIES = [
     ("Activity", "activity", "Work type or task (e.g., process, material)"),
     ("Timing", "timing", "Date or scheduling columns (e.g., start/end date)"),
     ("Drivers", "drivers", "Numeric quantities or metrics (e.g., tons, BCMs)"),
+    ("Rate", "rate", "Rate values associated with activities (e.g., $/ton)"),
 ]
 
 # Number of columns for the checkbox grid in the column selection UI.

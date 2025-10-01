@@ -156,18 +156,27 @@ class AggregationStage:
                 )
             )
 
+            final_df = self.context.state.final_dataframe
+
+            # Identify month columns (all columns except grouping columns)
+            month_cols = [col for col in final_df.columns if col not in grouping_cols]
+
+            # Calculate the grand total by summing all values in the month columns
+            total = 0
+            if month_cols and final_df.height > 0:
+                # Sum each row across month columns, then sum the resulting column of row totals.
+                total_sum = final_df.select(pl.sum_horizontal(pl.col(month_cols))).sum().item()
+                # The result can be None if the dataframe is empty, so default to 0.
+                total = total_sum if total_sum is not None else 0
+
             export_path = self.context.state.export_aggregated_data()
 
-            grand_total = self.context.state.final_dataframe.filter(
-                pl.col(grouping_cols[0]) == "GRAND TOTAL"
-            )["Total"][0]
-
             success_msg = (
-                f"🎉 DATA AGGREGATION COMPLETE! 🎉\n\n"
+                f"DATA AGGREGATION COMPLETE!\n\n"
                 f"Source Sheet: {self.context.state.sheet_name}\n"
-                f"Final Shape: {self.context.state.final_dataframe.shape[0]} rows × "
-                f"{self.context.state.final_dataframe.shape[1]} columns\n"
-                f"Grand Total of '{driver_col}': {grand_total:,.2f}\n\n"
+                f"Final Shape: {final_df.shape[0]} rows × "
+                f"{final_df.shape[1]} columns\n"
+                f"Total of '{driver_col}': {total:,.2f}\n\n"
                 f"Grouped by {len(grouping_cols)} columns: {', '.join(grouping_cols)}\n\n"
                 f"Exported to: {export_path}\n\n"
                 "Would you like to proceed to driver profile visualization?"

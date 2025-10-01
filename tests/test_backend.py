@@ -12,7 +12,7 @@ from tests.test_data_factory import (
     create_toy_dataframe_with_datetime_column,
     create_toy_dataframe_with_date_column
 )
-from backend import data_processor, plot_generator, utils, data_filter, unit_converter
+from backend import data_processor, plot_generator, utils, data_filter, unit_converter, column_generation
 
 # Ensure the output directory exists for plot saving
 import config
@@ -315,7 +315,7 @@ def test_data_filtering_and_comparison_plots():
         print("[SKIP] No data rows available for plotting.")
 
     # 7. NEW: Generate plot for the longest series to justify the extended timeline
-    print(f"\n--- 7. Generating Justification Plot for 'West | Widgets' ---")
+    print(f"\n--- 7. Generating Plot for 'West | Widgets' ---")
     try:
         # Find the index of the "West | Widgets" group programmatically
         west_widgets_index = -1
@@ -331,19 +331,19 @@ def test_data_filtering_and_comparison_plots():
             west_figure = plot_generator.generate_plot(
                 df=smoothed_df,
                 entry_index=west_widgets_index,
-                selected_entry_label=f"{selected_label} (Smoothed, Justification)",
+                selected_entry_label=f"{selected_label} (Smoothed, )",
                 grouping_cols=grouping_cols,
                 driver_col_name=driver_col,
                 plot_settings=config.DEFAULT_PLOT_SETTINGS,
             )
-            west_plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / "justification_plot_west_widgets.png"
+            west_plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / "_plot_west_widgets.png"
             west_figure.savefig(west_plot_path)
-            print(f"Justification plot saved to: {west_plot_path}")
+            print(f" plot saved to: {west_plot_path}")
         else:
-            print("Could not find 'West | Widgets' group to generate justification plot.")
+            print("Could not find 'West | Widgets' group to generate  plot.")
 
     except Exception as e:
-        print(f"An error occurred while generating the justification plot: {e}")
+        print(f"An error occurred while generating the  plot: {e}")
         
     print("\n[SUCCESS] Data filtering and comparison test completed.\n")
     return aggregated_df, smoothed_df
@@ -444,6 +444,68 @@ def test_unit_conversion():
     print("\n[SUCCESS] Unit conversion test completed.\n")
     return converted_df
 
+def test_column_generation():
+    """
+    Tests the column generation functionality.
+    """
+    print("\n" + "="*40)
+    print("  TESTING COLUMN GENERATION  ")
+    print("="*40 + "\n")
+
+    # 1. Create a base DataFrame
+    data = {
+        'A': [1, 2, 3, 4, 5],
+        'B': [10, 20, 30, 40, 50],
+        'C': [2, 4, 2, 5, 10],
+        'D_str': ["5", "10", "15", "20", "25"] # Test string casting
+    }
+    df = pl.DataFrame(data)
+    print("--- 1. Original DataFrame ---")
+    print(df)
+    print("\n")
+
+    # 2. Test SUM operation
+    print("--- 2. Testing SUM: A + B ---")
+    df_sum = column_generation.generate_new_column(df, ['A', 'B'], 'Sum_A_B', 'sum')
+    print(df_sum)
+    expected_sum = pl.Series("Sum_A_B", [11.0, 22.0, 33.0, 44.0, 55.0])
+    assert df_sum['Sum_A_B'].equals(expected_sum)
+    print("[SUCCESS] Sum operation is correct.\n")
+
+    # 3. Test MULTIPLY operation
+    print("--- 3. Testing MULTIPLY: A * C ---")
+    df_mul = column_generation.generate_new_column(df, ['A', 'C'], 'Mul_A_C', 'multiply')
+    print(df_mul)
+    expected_mul = pl.Series("Mul_A_C", [2.0, 8.0, 6.0, 20.0, 50.0])
+    assert df_mul['Mul_A_C'].equals(expected_mul)
+    print("[SUCCESS] Multiply operation is correct.\n")
+    
+    # 4. Test DIVIDE operation
+    print("--- 4. Testing DIVIDE: B / C ---")
+    df_div = column_generation.generate_new_column(df, ['B', 'C'], 'Div_B_C', 'divide')
+    print(df_div)
+    expected_div = pl.Series("Div_B_C", [5.0, 5.0, 15.0, 8.0, 5.0])
+    assert df_div['Div_B_C'].equals(expected_div)
+    print("[SUCCESS] Divide operation is correct.\n")
+    
+    # 5. Test with string casting
+    print("--- 5. Testing SUM with string cast: A + D_str ---")
+    df_cast = column_generation.generate_new_column(df, ['A', 'D_str'], 'Sum_A_Dstr', 'sum')
+    print(df_cast)
+    expected_cast_sum = pl.Series("Sum_A_Dstr", [6.0, 12.0, 18.0, 24.0, 30.0])
+    assert df_cast['Sum_A_Dstr'].equals(expected_cast_sum)
+    print("[SUCCESS] Sum with string casting is correct.\n")
+
+    # 6. Test multiple column sum
+    print("--- 6. Testing MULTI-COLUMN SUM: A + B + C ---")
+    df_multi_sum = column_generation.generate_new_column(df, ['A', 'B', 'C'], 'Sum_ABC', 'sum')
+    print(df_multi_sum)
+    expected_multi_sum = pl.Series("Sum_ABC", [13.0, 26.0, 35.0, 49.0, 65.0])
+    assert df_multi_sum['Sum_ABC'].equals(expected_multi_sum)
+    print("[SUCCESS] Multi-column sum is correct.\n")
+
+    print("[SUCCESS] Column generation test completed.\n")
+    return df_multi_sum
 
 if __name__ == "__main__":
     print("Starting comprehensive backend tests...")
@@ -477,3 +539,13 @@ if __name__ == "__main__":
     print("  RUNNING TEST SUITE 4: UNIT CONVERSION  ")
     print("="*60 + "\n")
     test_unit_conversion()
+    
+    # Test 5: New Test
+    print("\n" + "="*60)
+    print("  RUNNING TEST SUITE 5: COLUMN GENERATION  ")
+    print("="*60 + "\n")
+    test_column_generation()
+
+    print("\n" + "="*50)
+    print("  ALL BACKEND TESTS COMPLETED SUCCESSFULLY  ")
+    print("="*50)
