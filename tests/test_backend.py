@@ -127,45 +127,9 @@ def test_aggregation_date_column():
     return aggregated_df
 
 
-def test_plotting(aggregated_df: pl.DataFrame, driver_col: str):
-    """
-    Tests the plot_generator.generate_plot function.
-    """
-    print("\n" + "="*30)
-    print("    RUNNING PLOTTING TEST   ")
-    print("="*30 + "\n")
-
-    if aggregated_df.height == 0:
-        print("[SKIP] No data rows to plot.")
-        return
-
-    # 1. Define plot parameters
-    grouping_cols = ["Region", "Product Line"]
-    entry_to_plot_index = 0  # First data row
-    
-    # Create a descriptive label for the plot title
-    label_parts = [str(aggregated_df[col][entry_to_plot_index]) for col in grouping_cols]
-    selected_label = " | ".join(label_parts)
-    
-    print(f"--- 1. Generating plot for entry {entry_to_plot_index}: '{selected_label}' ---\n")
-    
-    # 2. Generate the plot
-    figure = plot_generator.generate_plot(
-        df=aggregated_df,
-        entry_index=entry_to_plot_index,
-        selected_entry_label=selected_label,
-        grouping_cols=grouping_cols,
-        driver_col_name=driver_col,
-        plot_settings=config.DEFAULT_PLOT_SETTINGS,
-    )
-    
-    # 3. Save the plot for inspection
-    plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / "test_plot.png"
-    figure.savefig(plot_path)
-    
-    print(f"--- 2. Plot saved to: {plot_path} ---")
-    print("\nPlease open the image file to visually verify the plot.\n")
-    print("[SUCCESS] Plotting test completed.\n")
+# The `test_plotting` function has been removed as it was redundant.
+# The `test_data_filtering_and_comparison_plots` function already
+# generates a plot of the original aggregated data for comparison purposes.
 
 
 def test_data_filtering_and_comparison_plots():
@@ -256,8 +220,9 @@ def test_data_filtering_and_comparison_plots():
 
 
     # The most important check: Conservation of mass. The total volume must be the same.
-    original_month_cols = [c for c in original_series.columns if c not in grouping_cols]
-    smoothed_month_cols = [c for c in smoothed_series.columns if c not in grouping_cols]
+    exclude_cols = grouping_cols + ["ID"]
+    original_month_cols = [c for c in original_series.columns if c not in exclude_cols]
+    smoothed_month_cols = [c for c in smoothed_series.columns if c not in grouping_cols] # This line is fine as smoothed_df has no ID column
 
     original_total = original_series.select(pl.sum_horizontal(original_month_cols))[0,0]
     smoothed_total = smoothed_series.select(pl.sum_horizontal(smoothed_month_cols))[0,0]
@@ -336,7 +301,7 @@ def test_data_filtering_and_comparison_plots():
                 driver_col_name=driver_col,
                 plot_settings=config.DEFAULT_PLOT_SETTINGS,
             )
-            west_plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / "_plot_west_widgets.png"
+            west_plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / "west_widgets_plot.png"
             west_figure.savefig(west_plot_path)
             print(f" plot saved to: {west_plot_path}")
         else:
@@ -510,12 +475,14 @@ def test_column_generation():
 if __name__ == "__main__":
     print("Starting comprehensive backend tests...")
     
-    # Test 1: Aggregation with string dates and general plotting
+    # Test 1: Aggregation with string dates
     print("\n" + "="*60)
-    print("  RUNNING TEST SUITE 1: STRING DATE AGGREGATION & PLOTTING  ")
+    print("  RUNNING TEST SUITE 1: STRING DATE AGGREGATION  ")
     print("="*60 + "\n")
     final_df_string_dates = test_aggregation_string_dates()
-    test_plotting(final_df_string_dates, driver_col="Sales Volume")
+    # The call to test_plotting() has been removed as it's redundant.
+    # The test_data_filtering_and_comparison_plots function already
+    # generates an "original" plot for comparison.
     
     # Test 2: Aggregation with different date column types
     print("\n" + "="*60)
@@ -530,17 +497,13 @@ if __name__ == "__main__":
     print("="*60 + "\n")
     original_df, smoothed_df = test_data_filtering_and_comparison_plots()
     
-    print("\n" + "="*50)
-    print("  ALL BACKEND TESTS COMPLETED SUCCESSFULLY  ")
-    print("="*50)
-    
     # Test 4: Unit conversion
     print("\n" + "="*60)
     print("  RUNNING TEST SUITE 4: UNIT CONVERSION  ")
     print("="*60 + "\n")
     test_unit_conversion()
     
-    # Test 5: New Test
+    # Test 5: Column Generation
     print("\n" + "="*60)
     print("  RUNNING TEST SUITE 5: COLUMN GENERATION  ")
     print("="*60 + "\n")

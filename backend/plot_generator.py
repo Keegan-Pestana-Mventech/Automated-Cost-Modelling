@@ -67,9 +67,11 @@ def generate_plot(
     figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
     ax = figure.add_subplot(111)
 
-    # Get monthly columns (exclude grouping columns and 'Total')
+    # Get monthly columns (exclude grouping columns, 'ID', and 'Total')
+    # The 'ID' column is a string identifier and not a plottable value.
+    exclude_cols = grouping_cols + ["ID", "Total"]
     month_cols = [
-        col for col in df.columns if col not in grouping_cols and col != "Total"
+        col for col in df.columns if col not in exclude_cols
     ]
 
     values: List[float] = []

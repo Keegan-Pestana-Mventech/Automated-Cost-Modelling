@@ -39,8 +39,9 @@ def smooth_data_with_stockpile(
             logger.warning("Empty DataFrame provided for smoothing")
             return df
         
-        # Get month columns (sorted chronologically)
-        month_cols = sorted([col for col in df.columns if col not in grouping_cols])
+        # Get month columns (sorted chronologically), excluding grouping and ID columns
+        exclude_cols = grouping_cols + ["ID"]
+        month_cols = sorted([col for col in df.columns if col not in exclude_cols])
         
         if not month_cols:
             logger.warning("No month columns found")
