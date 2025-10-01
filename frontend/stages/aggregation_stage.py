@@ -158,16 +158,24 @@ class AggregationStage:
 
             final_df = self.context.state.final_dataframe
 
-            # Identify month columns (all columns except grouping columns)
-            month_cols = [col for col in final_df.columns if col not in grouping_cols]
-
-            # Calculate the grand total by summing all values in the month columns
+            # Calculate the grand total correctly
             total = 0
-            if month_cols and final_df.height > 0:
-                # Sum each row across month columns, then sum the resulting column of row totals.
-                total_sum = final_df.select(pl.sum_horizontal(pl.col(month_cols))).sum().item()
-                # The result can be None if the dataframe is empty, so default to 0.
-                total = total_sum if total_sum is not None else 0
+            if final_df.height > 0:
+                # Identify month columns (all columns except grouping columns and ID)
+                month_cols = [
+                    col for col in final_df.columns 
+                    if col not in grouping_cols and col != "ID"
+                ]
+                
+                if month_cols:
+                    # Sum each row across month columns, then sum the resulting column of row totals
+                    total_sum = (
+                        final_df
+                        .select(pl.sum_horizontal(pl.col(month_cols)))
+                        .sum()
+                        .item()
+                    )
+                    total = total_sum if total_sum is not None else 0
 
             export_path = self.context.state.export_aggregated_data()
 

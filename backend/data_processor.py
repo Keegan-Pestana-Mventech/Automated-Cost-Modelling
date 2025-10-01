@@ -32,6 +32,53 @@ def _validate_columns(
         )
 
 
+def _generate_id_column(df: pl.DataFrame, grouping_cols: List[str]) -> pl.DataFrame:
+    """
+    Generate an ID column by concatenating grouping column values with hyphens.
+    
+    The ID column provides a unique identifier for each row based on the combination
+    of grouping values. This is useful for:
+    - Tracking individual records through transformations
+    - Creating human-readable composite keys
+    - Debugging and data validation
+    
+    Args:
+        df: Input DataFrame with grouping columns
+        grouping_cols: List of column names to concatenate
+    
+    Returns:
+        DataFrame with new 'ID' column prepended
+        
+    Example:
+        Input:
+            Name   | Age | Gender
+            Keegan | 25  | Male
+            
+        Output (with grouping_cols=['Name', 'Age', 'Gender']):
+            ID              | Name   | Age | Gender
+            Keegan-25-Male  | Keegan | 25  | Male
+    """
+    if not grouping_cols:
+        # If no grouping columns, create a simple sequential ID
+        logger.warning("No grouping columns provided for ID generation. Using row numbers.")
+        return df.with_columns(
+            pl.arange(0, df.height).cast(pl.Utf8).alias("ID")
+        ).select(["ID"] + df.columns)
+    
+    # Convert all grouping columns to strings and concatenate with hyphen separator
+    # We use pl.concat_str which handles null values gracefully (converts to empty string)
+    id_expr = pl.concat_str(
+        [pl.col(col).cast(pl.Utf8) for col in grouping_cols],
+        separator="-"
+    ).alias("ID")
+    
+    # Add ID column and reorder so ID is first
+    df_with_id = df.with_columns(id_expr)
+    
+    # Reorder columns: ID first, then original columns
+    return df_with_id.select(["ID"] + df.columns)
+
+
 def _preprocess_dataframe(
     df: pl.DataFrame, 
     grouping_cols: List[str], 
@@ -58,7 +105,7 @@ def _preprocess_dataframe(
         Preprocessed DataFrame with parsed_date, numeric_driver, and month_period columns
     """
 
-    # Convert the eager DataFrame into a LazyFrame, with our selected coloumns.
+    # Convert the eager DataFrame into a LazyFrame, with our selected columns.
     # A LazyFrame allows you to "describe" a sequence of transformations without executing them immediately.
     # Polars will optimize the query plan and only run it when .collect() is called at the end.
     lazy_df = df.lazy().select(
@@ -142,45 +189,6 @@ def _pivot_monthly(df: pl.DataFrame, grouping_cols: List[str]) -> pl.DataFrame:
     return pivoted.sort(grouping_cols)
 
 
-def _calculate_totals(
-    df: pl.DataFrame, grouping_cols: List[str], month_cols: List[str]
-) -> pl.DataFrame:
-    """
-    Add row totals and a grand total row (if grouping columns are present).
-    
-    Args:
-        df: Pivoted DataFrame
-        grouping_cols: Grouping column names
-        month_cols: List of month column names (already validated as numeric)
-    
-    Returns:
-        DataFrame with Total column and GRAND TOTAL row appended
-    """
-    # Add row total by summing across all month columns horizontally
-    # sum_horizontal requires all columns to be numeric, which is ensured by caller
-    df = df.with_columns(Total=pl.sum_horizontal(month_cols))
-
-    if not grouping_cols:
-        return df
-
-    # Calculate grand totals across all numeric columns
-    # This produces a single-row DataFrame with the sum of each column
-    numeric_totals = df.select(month_cols + ["Total"]).sum()
-
-    # Build the summary row
-    # First grouping column gets "GRAND TOTAL" label, others get empty strings
-    grand_total_data = {grouping_cols[0]: "GRAND TOTAL"}
-    for col in grouping_cols[1:]:
-        grand_total_data[col] = ""
-
-    # Add the computed totals for each month and the Total column
-    for col in month_cols + ["Total"]:
-        grand_total_data[col] = numeric_totals[col][0]
-
-    total_row = pl.DataFrame([grand_total_data])
-    return pl.concat([df, total_row], how="vertical")
-
-
 def aggregate_data(
     df: pl.DataFrame, 
     grouping_cols: List[str], 
@@ -189,12 +197,13 @@ def aggregate_data(
     date_trunc_unit: Optional[str] = None
 ) -> pl.DataFrame:
     """
-    Perform time-series aggregation with monthly pivoting.
+    Perform time-series aggregation with monthly pivoting and ID generation.
 
     Steps:
     1. Validate required columns exist
     2. Preprocess (parse dates, cast drivers, truncate to configured unit)
     3. Pivot values into monthly columns
+    4. Generate ID column from grouping columns
 
     Args:
         df: Input DataFrame containing the data to aggregate
@@ -205,10 +214,17 @@ def aggregate_data(
                         If None, defaults to config.DATE_TRUNC_UNIT
 
     Returns:
-        pl.DataFrame: Pivoted DataFrame with monthly columns (format: "YYYY-MM").
+        pl.DataFrame: Pivoted DataFrame with ID column first, followed by grouping columns,
+                     then monthly columns (format: "YYYY-MM").
+                     
+                     The ID column contains hyphen-separated concatenation of grouping values.
+                     
+                     Example output structure:
+                     ID              | Name   | Age | Gender | 2024-01 | 2024-02
+                     Keegan-25-Male  | Keegan | 25  | Male   | 100     | 150
                      
                      Note: If no valid data remains after preprocessing, returns an empty DataFrame
-                     with only grouping columns.
+                     with ID and grouping columns.
 
     Raises:
         ValueError: If required columns are missing from input DataFrame
@@ -236,8 +252,9 @@ def aggregate_data(
                 "No valid data after preprocessing. Returning empty DataFrame. "
                 "This typically means all dates were invalid or missing."
             )
-            # Return empty frame with just the grouping columns
-            return pl.DataFrame({col: [] for col in grouping_cols})
+            # Return empty frame with ID and grouping columns
+            empty_df = pl.DataFrame({col: [] for col in grouping_cols})
+            return _generate_id_column(empty_df, grouping_cols)
 
         # 3. Pivot to monthly columns
         pivoted = _pivot_monthly(df_transformed, grouping_cols)
@@ -249,7 +266,8 @@ def aggregate_data(
         )
         if not month_cols:
             logger.warning("No month columns generated after pivot.")
-            return pivoted.select(grouping_cols)
+            result = pivoted.select(grouping_cols)
+            return _generate_id_column(result, grouping_cols)
 
         # Ensure all month columns are numeric before we attempt to sum them
         # This is a defensive check to prevent cryptic errors from sum_horizontal
@@ -262,10 +280,16 @@ def aggregate_data(
 
         pivoted = pivoted.select(grouping_cols + month_cols).fill_null(0)
 
-        # 4. Totals are no longer added to the DataFrame per user request.
+        # 4. Generate ID column from grouping columns
+        # This creates a composite key by concatenating all grouping values with hyphens
+        # The ID column will be positioned as the first column in the output
+        pivoted_with_id = _generate_id_column(pivoted, grouping_cols)
 
-        logger.info(f"Aggregation complete. Result shape: {pivoted.shape}")
-        return pivoted
+        logger.info(
+            f"Aggregation complete. Result shape: {pivoted_with_id.shape}. "
+            f"ID column generated from {len(grouping_cols)} grouping columns."
+        )
+        return pivoted_with_id
 
     except Exception as e:
         logger.error(f"An error occurred during data aggregation: {e}")
