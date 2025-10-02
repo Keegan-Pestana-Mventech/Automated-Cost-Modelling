@@ -1,12 +1,26 @@
+import sys
 from pathlib import Path
 
+# Determine the base directory
+# When running as PyInstaller exe, use the directory containing the exe
+# When running as script, use the directory containing this file
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    BASE_DIR = Path(sys.executable).parent
+else:
+    # Running as script
+    BASE_DIR = Path(__file__).parent
+
 # The name of the Excel file to be processed.
-# This file should be in the same directory as main.py.
-EXCEL_FILE = "REDISTRIBUTED MY26 Deswik Dump Summary Mine Physicals 22 August 2025.xlsx"
+# This file should be in the same directory as the executable/script.
+EXCEL_FILE = BASE_DIR / "REDISTRIBUTED MY26 Deswik Dump Summary Mine Physicals 22 August 2025.xlsx"
 
 # The directory where output files (checkpoints, logs, final data) will be saved.
 # This directory will be created if it doesn't exist.
-OUTPUT_DIRECTORY = Path("data")
+OUTPUT_DIRECTORY = BASE_DIR / "data"
+
+# Ensure output directory exists
+OUTPUT_DIRECTORY.mkdir(exist_ok=True)
 
 # Default sheet name to load
 DEFAULT_SHEET_NAME = "Deswik Dump"
