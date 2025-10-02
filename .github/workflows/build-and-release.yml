@@ -34,19 +34,19 @@ jobs:
         
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name AutomatedCostModelling ^
-        --add-data "backend;backend" ^
-        --add-data "frontend;frontend" ^
-        --hidden-import=fastexcel ^
-        --collect-all fastexcel ^
-        --collect-binaries fastexcel ^
-        --copy-metadata fastexcel ^
-        --hidden-import=pandas ^
-        --hidden-import=numpy ^
-        --hidden-import=polars ^
-        --hidden-import=matplotlib ^
-        --hidden-import=pint ^
-        --collect-submodules fastexcel ^
+        pyinstaller --onefile --windowed --name AutomatedCostModelling `
+        --add-data "backend;backend" `
+        --add-data "frontend;frontend" `
+        --hidden-import=fastexcel `
+        --collect-all fastexcel `
+        --collect-binaries fastexcel `
+        --copy-metadata fastexcel `
+        --hidden-import=pandas `
+        --hidden-import=numpy `
+        --hidden-import=polars `
+        --hidden-import=matplotlib `
+        --hidden-import=pint `
+        --collect-submodules fastexcel `
         main.py
         
     - name: Verify build output
