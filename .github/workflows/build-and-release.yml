@@ -25,12 +25,56 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
+    - name: Debug - Verify package installation
+      run: |
+        pip list
+        python -c "import fastexcel; print('fastexcel location:', fastexcel.__file__)"
+        python -c "import pandas; print('pandas version:', pandas.__version__)"
+        python -c "import polars; print('polars version:', polars.__version__)"
+        
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name AutomatedCostModelling --add-data "backend;backend" --add-data "frontend;frontend" main.py
+        pyinstaller --onefile --windowed --name AutomatedCostModelling ^
+        --add-data "backend;backend" ^
+        --add-data "frontend;frontend" ^
+        --hidden-import=fastexcel ^
+        --collect-all fastexcel ^
+        --collect-binaries fastexcel ^
+        --copy-metadata fastexcel ^
+        --hidden-import=pandas ^
+        --hidden-import=numpy ^
+        --hidden-import=polars ^
+        --hidden-import=matplotlib ^
+        --hidden-import=pint ^
+        --collect-submodules fastexcel ^
+        main.py
+        
+    - name: Verify build output
+      run: |
+        dir dist
+        if (Test-Path "dist/AutomatedCostModelling.exe") {
+          Write-Host "Build successful - EXE found"
+          $size = (Get-Item "dist/AutomatedCostModelling.exe").Length / 1MB
+          Write-Host "EXE size: $([math]::Round($size, 2)) MB"
+        } else {
+          Write-Error "Build failed - EXE not found"
+          exit 1
+        }
+      shell: pwsh
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AutomatedCostModelling
+        name: AutomatedCostModelling-${{ github.sha }}
         path: dist/AutomatedCostModelling.exe
+        retention-days: 30
+        
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ github.sha }}
+        path: |
+          build/
+          *.spec
+        retention-days: 7
