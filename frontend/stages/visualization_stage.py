@@ -2,8 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import config
-from backend import plot_generator
-from ..ui_components import PlotView
+from ..ui_components.plot_view import PlotView
 
 
 class VisualizationStage:
@@ -48,7 +47,6 @@ class VisualizationStage:
             self.context.state.final_dataframe,
             grouping_cols,
             self.context.state.driver_col,
-            plot_generator,
         )
         self.plot_view.grid(row=1, column=0, sticky="nsew", padx=10)
 

@@ -21,16 +21,47 @@ DEFAULT_COLUMN_SELECTIONS = {
 }
 
 # =============================================================================
+# RATE HANDLING & VALIDATION
+# =============================================================================
+# The core assumption of the aggregation is that rates are constant for a given
+# group (e.g., for a specific Mine, Zone, and Activity). This section
+# configures how the application validates this assumption.
+
+# If True, the aggregation process will be stopped with an error if rate
+# variability is detected within any group. This enforces strict data quality.
+# If False, a warning will be shown to the user, who can then choose to
+# proceed. If they proceed, the first rate encountered for each group will be
+# used as the representative "standard rate".
+BLOCK_ON_VARIABILITY = False
+
+# Float tolerance for comparing SI rate values to check for consistency.
+# Rates are considered different if abs(rate1 - rate2) > RATE_EPSILON.
+# This prevents false positives from minor floating-point inaccuracies.
+RATE_EPSILON = 0.01
+
+# Format string for the new SI Rate column name created during unit conversion.
+# The '{}' will be replaced with the original rate column name.
+RATE_COLUMN_ALIAS = "SI {}"
+
+# If True, a detailed Excel file is automatically generated and saved when
+# rate variability is detected. This report lists all groups that failed the
+# consistency check, helping users diagnose data quality issues.
+QA_EXPORT_ENABLED = True
+
+
+# =============================================================================
 # DATA PROCESSING
 # =============================================================================
 # The time unit for truncating dates for monthly aggregation.
 # See polars documentation for options (e.g., "1mo", "1w", "1d").
 DATE_TRUNC_UNIT = "1mo"
 
-# Conversion factor for the 'Rate' column to its SI equivalent.
-# Example: If Rate is in $/short_ton, to get $/tonne, multiply by (1 / 0.907185) ≈ 1.10231.
-# Set to 1.0 if no conversion is needed.
-RATE_SI_CONVERSION_FACTOR = 1.10231
+# Default thresholds for stockpile smoothing, keyed by driver column name.
+# These are initial values and can be adjusted in the UI.
+DRIVER_THRESHOLDS = {
+    "Linear Meters": 100.0
+    # Add other potential driver columns and their default thresholds here
+}
 
 
 # =============================================================================
@@ -56,9 +87,19 @@ PLOT_COLOR_MAP = {
     "Crimson": "#C73E1D",
     "Sky Blue": "#3F7CAC",
     "Forest Green": "#2BA84A",
+    "Grape": "#6A4C93",
+    "Sunny Yellow": "#FFCA3A",
+    "Ruby Red": "#D62828",
+    "Emerald Green": "#04A777",
 }
 
-# Default settings for the plot view.
+# Style for filtered data series when overlaying with unfiltered data.
+FILTERED_PLOT_STYLE = {
+    "linestyle": "--",
+    "linewidth": 2,
+}
+
+# Default settings for the plot view (kept for potential future use).
 DEFAULT_PLOT_SETTINGS = {
     "plot_type": "line",
     "color": PLOT_COLOR_MAP["Ocean Blue"],

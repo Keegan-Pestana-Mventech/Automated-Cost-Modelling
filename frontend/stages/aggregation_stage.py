@@ -135,19 +135,55 @@ class AggregationStage:
             + self.context.state.selected_columns["activity"]
         )
 
+        si_rate_col = None
+        rate_cols = self.context.state.selected_columns.get("rate", [])
+        if rate_cols and rate_cols[0]:
+            si_rate_col = config.RATE_COLUMN_ALIAS.format(rate_cols[0])
+
         try:
-            self.context.state.final_dataframe = data_processor.aggregate_data(
+            final_df, validation_result = data_processor.aggregate_data(
                 df=self.context.state.df,
                 grouping_cols=grouping_cols,
                 start_date_col=start_date_col,
                 driver_col=driver_col,
+                si_rate_col=si_rate_col,
             )
+
+            if validation_result and not validation_result["is_consistent"]:
+                qa_df = validation_result.get("variable_groups_df")
+                qa_export_path = None
+                if config.QA_EXPORT_ENABLED and qa_df is not None and qa_df.height > 0:
+                    qa_export_path = self.context.state.export_qa_data(qa_df)
+
+                warning_msg = (
+                    f"{validation_result['message']}\n\n"
+                    "This can lead to misrepresentation if rates are not constant."
+                )
+                
+                unparsable_count = validation_result.get("unparsable_rate_count", 0)
+                if unparsable_count > 0:
+                    warning_msg += f"\n\nNote: {unparsable_count} row(s) had unparsable rates and were ignored during this check."
+
+                if qa_export_path:
+                    warning_msg += f"\n\nA detailed QA report has been exported to:\n{qa_export_path}"
+                
+                if config.BLOCK_ON_VARIABILITY:
+                    messagebox.showerror("Aggregation Blocked", warning_msg + "\n\nProcessing has been stopped as per configuration.")
+                    return
+                
+                warning_msg += "\n\nDo you want to proceed with the aggregation using the first detected rate for each group, or abort?"
+                
+                if not messagebox.askyesno("Rate Variability Detected", warning_msg, detail="Choosing 'Yes' will proceed with a potential data quality risk."):
+                    self.context.log("User aborted aggregation due to rate variability.\n")
+                    return
+                else:
+                    self.context.log("User acknowledged rate variability risk and chose to proceed.\n")
+
+            self.context.state.final_dataframe = final_df
 
             self.context.log(
                 self.context.inspector.log_step(
-                    self.context.state.final_dataframe,
-                    "AGGREGATION_COMPLETE",
-                    "Pivoted DataFrame created",
+                    self.context.state.final_dataframe, "AGGREGATION_COMPLETE", "Pivoted DataFrame created"
                 )
             )
             self.context.log(
@@ -156,25 +192,15 @@ class AggregationStage:
                 )
             )
 
-            final_df = self.context.state.final_dataframe
-
-            # Calculate the grand total correctly
             total = 0
             if final_df.height > 0:
-                # Identify month columns (all columns except grouping columns and ID)
                 month_cols = [
                     col for col in final_df.columns 
-                    if col not in grouping_cols and col != "ID"
+                    if col not in (grouping_cols + ["ID"] + ([si_rate_col] if si_rate_col else []))
                 ]
                 
                 if month_cols:
-                    # Sum each row across month columns, then sum the resulting column of row totals
-                    total_sum = (
-                        final_df
-                        .select(pl.sum_horizontal(pl.col(month_cols)))
-                        .sum()
-                        .item()
-                    )
+                    total_sum = (final_df.select(pl.sum_horizontal(pl.col(month_cols))).sum().item())
                     total = total_sum if total_sum is not None else 0
 
             export_path = self.context.state.export_aggregated_data()
@@ -182,11 +208,19 @@ class AggregationStage:
             success_msg = (
                 f"DATA AGGREGATION COMPLETE!\n\n"
                 f"Source Sheet: {self.context.state.sheet_name}\n"
-                f"Final Shape: {final_df.shape[0]} rows × "
-                f"{final_df.shape[1]} columns\n"
+                f"Final Shape: {final_df.shape[0]} rows × {final_df.shape[1]} columns\n"
                 f"Total of '{driver_col}': {total:,.2f}\n\n"
                 f"Grouped by {len(grouping_cols)} columns: {', '.join(grouping_cols)}\n\n"
-                f"Exported to: {export_path}\n\n"
+            )
+
+            if validation_result:
+                if validation_result["is_consistent"]:
+                    success_msg += "Rate consistency validation passed.\n"
+                else:
+                    success_msg += "WARNING: Rate variability was detected and acknowledged.\n"
+
+            success_msg += (
+                f"\nExported to: {export_path}\n\n"
                 "Would you like to proceed to driver profile visualization?"
             )
 

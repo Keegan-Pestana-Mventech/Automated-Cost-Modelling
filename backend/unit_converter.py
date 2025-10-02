@@ -185,15 +185,19 @@ def add_si_rate_column(
     """
     Add a new column with SI-converted rates to the dataframe.
     
+    This function serves as the first step in the rate handling pipeline. It creates
+    a standardized, comparable rate column (e.g., "SI Rate") that will be used
+    downstream by `data_processor.py` to validate rate consistency.
+    
     Args:
-        df: Input DataFrame containing the rate column
-        rate_column_name: Name of the column containing rate strings
+        df: Input DataFrame containing the rate column.
+        rate_column_name: Name of the column containing rate strings.
         
     Returns:
-        DataFrame with new "SI {rate_column_name}" column added
+        DataFrame with a new "SI {rate_column_name}" column added.
         
     Raises:
-        ValueError: If the specified column doesn't exist
+        ValueError: If the specified column doesn't exist.
     """
     if rate_column_name not in df.columns:
         raise ValueError(
@@ -203,8 +207,7 @@ def add_si_rate_column(
     
     logger.info(f"Converting rates in column '{rate_column_name}' to monthly SI units")
     
-    # Apply the conversion to each rate string
-    # Using map_elements for string operations
+    # Apply the conversion to each rate string using map_elements for string operations.
     si_column_name = f"SI {rate_column_name}"
     
     df_with_si = df.with_columns(

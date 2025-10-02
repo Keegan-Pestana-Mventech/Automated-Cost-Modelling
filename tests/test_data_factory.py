@@ -132,3 +132,65 @@ def create_toy_dataframe_with_date_column() -> pl.DataFrame:
     }
 
     return pl.DataFrame(data, schema=schema)
+
+
+def create_df_with_consistent_rates() -> pl.DataFrame:
+    """Creates a DataFrame where rates within each group are consistent."""
+    data = {
+        "Location": ["Pit A", "Pit A", "Pit B", "Pit B", "Pit B"],
+        "Material": ["Ore", "Ore", "Waste", "Waste", "Ore"],
+        "Start Date": ["2025-01-10", "2025-02-10", "2025-01-15", "2025-02-15", "2025-01-20"],
+        "End Date": ["2025-01-31", "2025-02-28", "2025-01-31", "2025-02-28", "2025-01-31"],
+        "Driver": [100, 150, 500, 600, 200],
+        "Rate": ["10m/d", "10m/d", "50t/w", "50t/w", "25t/w"]
+    }
+    return pl.DataFrame(data)
+
+def create_df_with_variable_rates() -> pl.DataFrame:
+    """Creates a DataFrame where at least one group has variable rates."""
+    data = {
+        "Location": ["Pit A", "Pit A", "Pit B", "Pit B", "Pit B"],
+        "Material": ["Ore", "Ore", "Waste", "Waste", "Ore"],
+        "Start Date": ["2025-01-10", "2025-02-10", "2025-01-15", "2025-02-15", "2025-01-20"],
+        "End Date": ["2025-01-31", "2025-02-28", "2025-01-31", "2025-02-28", "2025-01-31"],
+        "Driver": [100, 150, 500, 600, 200],
+        "Rate": ["10m/d", "12m/d", "50t/w", "50t/w", "25t/w"]  # Pit A, Ore is variable
+    }
+    return pl.DataFrame(data)
+
+def create_df_with_unparsable_rates() -> pl.DataFrame:
+    """Creates a DataFrame with a mix of valid, invalid, and consistent rates."""
+    data = {
+        "Location": ["Pit A", "Pit A", "Pit A", "Pit B", "Pit B"],
+        "Material": ["Ore", "Ore", "Ore", "Waste", "Waste"],
+        "Start Date": ["2025-01-10", "2025-02-10", "2025-03-10", "2025-01-15", "2025-02-15"],
+        "End Date": ["2025-01-31", "2025-02-28", "2025-03-31", "2025-01-31", "2025-02-28"],
+        "Driver": [100, 150, 120, 500, 600],
+        "Rate": ["10m/d", "N/A", "10m/d", "50t/w", "50t/w"] # Pit A has consistent parsable rates, but one unparsable
+    }
+    return pl.DataFrame(data)
+
+def create_df_for_epsilon_check() -> pl.DataFrame:
+    """
+    Creates a DataFrame to test the RATE_EPSILON configuration.
+    
+    The epsilon is set to 0.01 in config.py.
+    After conversion to monthly SI units (using 30.44 days/month multiplier):
+    - Pit C: 1.5m/d → 45.66 meter/mo (both entries identical)
+      Difference: 0.0 (consistent rates, should be CONSISTENT)
+    - Pit D: 1.5m/d → 45.66 meter/mo and 1.502m/d → 45.72 meter/mo  
+      Difference: 0.06 (well above epsilon of 0.01, should be VARIABLE)
+    """
+    data = {
+        "Location": ["Pit C", "Pit C", "Pit D", "Pit D"],
+        "Material": ["Gold", "Gold", "Silver", "Silver"],
+        "Start Date": ["2025-01-10", "2025-02-10", "2025-01-15", "2025-02-15"],
+        "End Date": ["2025-01-31", "2025-02-28", "2025-01-31", "2025-02-28"],
+        "Driver": [10, 12, 50, 60],
+        # Pit C has identical rates (truly consistent)
+        # Pit D has rates that differ by more than epsilon after conversion
+        # 1.5m/d * 30.44 = 45.66 meter/mo
+        # 1.502m/d * 30.44 = 45.72 meter/mo (diff = 0.06, clearly above epsilon)
+        "Rate": ["1.5m/d", "1.5m/d", "1.5m/d", "1.502m/d"]
+    }
+    return pl.DataFrame(data)

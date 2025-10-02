@@ -3,7 +3,8 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 
 import config
-from ..ui_components import ColumnSelectionTabs
+from ..ui_components.column_selection_tabs import ColumnSelectionTabs
+from backend import unit_converter
 
 
 class ColumnSelectionStage:
@@ -61,7 +62,7 @@ class ColumnSelectionStage:
 
         ttk.Button(
             controls,
-            text="Proceed to Transformation →",
+            text="Proceed to Aggregation →",
             command=self._validate_and_proceed,
         ).pack(side=tk.LEFT, padx=5)
 
@@ -151,7 +152,8 @@ class ColumnSelectionStage:
             f"Location: {len(selected['location'])} cols\n"
             f"Activity: {len(selected['activity'])} cols\n"
             f"Timing: {len(selected['timing'])} cols\n"
-            f"Drivers: {len(selected['drivers'])} cols\n\n"
+            f"Drivers: {len(selected['drivers'])} cols\n"
+            f"Rate: {len(selected['rate'])} cols\n\n"
             f"Total: {len(all_cols)} columns\n"
             f"Shape: {preview_df.shape[0]} rows × {preview_df.shape[1]} columns"
         )
@@ -170,9 +172,10 @@ class ColumnSelectionStage:
         )
 
     def _validate_and_proceed(self):
-        """Validate selections and proceed to transformation setup"""
+        """Validate selections, add SI rate column, export, and proceed."""
         selected = self.column_tabs.get_selected_columns()
 
+        # --- Validation Checks ---
         if len(selected["timing"]) != 2:
             messagebox.showerror(
                 "Input Error",
@@ -192,6 +195,48 @@ class ColumnSelectionStage:
                 "Please select at least one 'Location' or 'Activity' column.",
             )
             return
+        
+        rate_cols = selected.get("rate", [])
+        if len(rate_cols) > 1:
+            messagebox.showwarning(
+                "Rate Column Warning",
+                "Multiple rate columns selected. Only the first one will be used for SI conversion."
+            )
 
-        self.context.state.selected_columns = selected
-        self.on_proceed()
+        # --- Processing ---
+        try:
+            self.context.state.selected_columns = selected
+            
+            # 1. Create the simple dataframe from all selected columns
+            all_cols = [col for cols in selected.values() for col in cols if col]
+            dataframe_raw = self.context.state.df.select(all_cols)
+
+            # 2. If a rate column is selected, add the SI converted column
+            if rate_cols and rate_cols[0]:
+                rate_col_name = rate_cols[0]
+                self.context.log(f"Applying SI unit conversion to '{rate_col_name}' column.\n")
+                dataframe_raw = unit_converter.add_si_rate_column(dataframe_raw, rate_col_name)
+                self.context.log(
+                    self.context.inspector.log_step(
+                        dataframe_raw, "SI_CONVERSION", f"Added 'SI {rate_col_name}' column"
+                    )
+                )
+
+            # 3. Update the main dataframe in the application state for the next stage
+            self.context.state.df = dataframe_raw
+
+            # 4. Export the `dataframe_raw` for user verification
+            export_path = self.context.state.export_raw_data(dataframe_raw)
+            messagebox.showinfo(
+                "Export Complete",
+                f"Intermediate dataframe with SI rates ('dataframe_raw') has been exported to:\n\n{export_path}"
+            )
+
+            # 5. Proceed to the next stage
+            self.on_proceed()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Processing Error", f"An error occurred during column processing: {e}"
+            )
+            self.context.log(f"ERROR: {e}\n")

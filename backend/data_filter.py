@@ -1,12 +1,27 @@
-# data_filter.py
-
 import polars as pl
 import logging
+import re
 from typing import List, Dict, Any
-from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
+
+
+def _is_month_column(col_name: str) -> bool:
+    """
+    Determine if a column name represents a month period (YYYY-MM format).
+    
+    This helper prevents non-temporal columns (like rate descriptors) from being
+    incorrectly identified as data columns during smoothing operations.
+    
+    Args:
+        col_name: Column name to check
+    
+    Returns:
+        True if the column matches YYYY-MM format, False otherwise
+    """
+    month_pattern = re.compile(r'^\d{4}-\d{2}$')
+    return bool(month_pattern.match(col_name))
 
 
 def smooth_data_with_stockpile(
@@ -39,9 +54,13 @@ def smooth_data_with_stockpile(
             logger.warning("Empty DataFrame provided for smoothing")
             return df
         
-        # Get month columns (sorted chronologically), excluding grouping and ID columns
+        # Get month columns using pattern matching to exclude rate columns and other metadata.
+        # Only columns in YYYY-MM format are considered temporal data for smoothing.
         exclude_cols = grouping_cols + ["ID"]
-        month_cols = sorted([col for col in df.columns if col not in exclude_cols])
+        month_cols = sorted([
+            col for col in df.columns 
+            if col not in exclude_cols and _is_month_column(col)
+        ])
         
         if not month_cols:
             logger.warning("No month columns found")
@@ -97,7 +116,7 @@ def smooth_data_with_stockpile(
         pivoted = result_df.pivot(
             values="actual_quantity",
             index=grouping_cols,
-            on="month",
+            columns="month",
             aggregate_function="first"
         )
         

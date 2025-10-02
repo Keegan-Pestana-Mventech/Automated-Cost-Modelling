@@ -1,6 +1,7 @@
 import polars as pl
 import logging
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict, Any
+import re
 import config
 
 logger = logging.getLogger(__name__)
@@ -84,78 +85,66 @@ def _preprocess_dataframe(
     grouping_cols: List[str], 
     start_date_col: str, 
     driver_col: str,
-    date_trunc_unit: str
+    date_trunc_unit: str,
+    passthrough_cols: Optional[List[str]] = None
 ) -> pl.DataFrame:
     """
-    Prepare the DataFrame for aggregation:
-    - Parse the start date column into proper datetime values (handles both string and datetime types)
-    - Cast the driver column to float and replace nulls with 0
-    - Truncate parsed dates to a configured period unit (e.g. "1mo" for monthly aggregation)
-    - Convert month_period to standardized string format ("%Y-%m") for consistent column naming
-    - Drop rows that have invalid or missing dates
+    Prepare the DataFrame for aggregation, optionally keeping extra columns.
+    
+    - Parse the start date column into proper datetime values.
+    - Cast the driver column to float and replace nulls with 0.
+    - Truncate parsed dates to a configured period unit (e.g., "1mo").
+    - Convert the period to a standardized string format ("%Y-%m").
+    - Drop rows that have invalid or missing dates.
+    - Keep specified `passthrough_cols` for later use (e.g., rate validation).
     
     Args:
-        df: Input DataFrame
-        grouping_cols: Columns to group by
-        start_date_col: Name of the date column
-        driver_col: Name of the numeric column to aggregate
-        date_trunc_unit: Time unit for truncation (e.g., "1mo", "1w", "1q")
+        df: Input DataFrame.
+        grouping_cols: Columns to group by.
+        start_date_col: Name of the date column.
+        driver_col: Name of the numeric column to aggregate.
+        date_trunc_unit: Time unit for truncation (e.g., "1mo", "1w", "1q").
+        passthrough_cols: Optional list of other columns to keep in the output.
     
     Returns:
-        Preprocessed DataFrame with parsed_date, numeric_driver, and month_period columns
+        Preprocessed DataFrame with parsed_date, numeric_driver, month_period,
+        and any specified passthrough columns.
     """
+    passthrough_cols = passthrough_cols or []
+    # Ensure all columns to be used are selected, preventing duplicates
+    all_cols_to_select = list(set(grouping_cols + [start_date_col, driver_col] + passthrough_cols))
 
-    # Convert the eager DataFrame into a LazyFrame, with our selected columns.
-    # A LazyFrame allows you to "describe" a sequence of transformations without executing them immediately.
-    # Polars will optimize the query plan and only run it when .collect() is called at the end.
-    lazy_df = df.lazy().select(
-        grouping_cols + [start_date_col, driver_col]
-    )
+    # Use a LazyFrame to build the query plan for efficiency.
+    lazy_df = df.lazy().select(all_cols_to_select)
  
-    # Parse the date column into a proper datetime type.
-    # We need to handle both string and datetime columns robustly.
-    # The approach:
-    # - Check the dtype of the column
-    # - If it's already Date or Datetime, cast to Datetime
-    # - If it's a string, parse it to Datetime
-    # - For any other type, the operation will produce null values
-    
-    # Get the dtype of the start_date_col to determine parsing strategy
+    # Robustly parse the date column, handling both string and datetime types.
     start_col_dtype = df.schema[start_date_col]
     
     if start_col_dtype in (pl.Date, pl.Datetime):
-        # Column is already a temporal type, just ensure it's Datetime
         parsed_and_cast = lazy_df.with_columns(
             pl.col(start_date_col).cast(pl.Datetime).alias("parsed_date"),
             pl.col(driver_col).cast(pl.Float64, strict=False).fill_null(0).alias("numeric_driver"),
         )
     else:
-        # Column is likely a string, parse it to datetime
-        # "strict=False" means invalid parses will become null instead of erroring
         parsed_and_cast = lazy_df.with_columns(
             pl.col(start_date_col).str.to_datetime(strict=False).alias("parsed_date"),
             pl.col(driver_col).cast(pl.Float64, strict=False).fill_null(0).alias("numeric_driver"),
         )
 
-    # Remove any rows where the date could not be parsed (i.e., parsed_date is null).
+    # Remove any rows where the date could not be parsed.
     filtered = parsed_and_cast.filter(
         pl.col("parsed_date").is_not_null()
     )
 
-    # Truncate the parsed date into a fixed time period, then convert to standardized string format.
-    # The date_trunc_unit parameter (e.g., "1mo") determines the aggregation period.
-    # All dates will be snapped to the start of the period (e.g., first day of the month).
-    # We then convert to "%Y-%m" format for consistent, sortable column names.
-   
+    # Truncate the date to the specified period and format it as a string.
     truncated = filtered.with_columns(
         pl.col("parsed_date")
             .dt.truncate(date_trunc_unit)
-            .dt.strftime("%Y-%m")  # Convert to standardized string format
+            .dt.strftime("%Y-%m")
             .alias("month_period")
     )
 
-    # Execute the lazy query plan and return a regular eager DataFrame.
-    # Until this point, no actual computation has occurred.
+    # Execute the lazy query plan and return the result.
     return truncated.collect()
 
 
@@ -164,29 +153,154 @@ def _pivot_monthly(df: pl.DataFrame, grouping_cols: List[str]) -> pl.DataFrame:
     Pivot the numeric driver values into monthly columns.
     
     Args:
-        df: Preprocessed DataFrame with month_period column
-        grouping_cols: Columns to use as pivot index
+        df: Preprocessed DataFrame with month_period column.
+        grouping_cols: Columns to use as the pivot index.
     
     Returns:
-        Pivoted DataFrame with one column per month period
-        
-        Result structure: If you start with:
-        Region | Product | month_period | numeric_driver
-        North  | A       | 2024-01      | 100
-        North  | A       | 2024-02      | 150
-        
-        You get:
-        Region | Product | 2024-01 | 2024-02
-        North  | A       | 100     | 150
+        Pivoted DataFrame with one column per month period.
     """
     pivoted = df.pivot(
         values="numeric_driver",
         index=grouping_cols,
-        on="month_period",
+        columns="month_period",
         aggregate_function="sum",
     )
-
     return pivoted.sort(grouping_cols)
+
+
+def _is_month_column(col_name: str) -> bool:
+    """
+    Determine if a column name represents a month period (YYYY-MM format).
+    
+    This helper prevents non-temporal columns (like rate descriptors) from being
+    incorrectly identified as data columns during filtering and aggregation operations.
+    
+    Args:
+        col_name: Column name to check
+    
+    Returns:
+        True if the column matches YYYY-MM format, False otherwise
+    """
+    month_pattern = re.compile(r'^\d{4}-\d{2}$')
+    return bool(month_pattern.match(col_name))
+
+
+def _validate_rate_consistency(
+    df: pl.DataFrame, grouping_cols: List[str], si_rate_col: str
+) -> Dict[str, Any]:
+    """
+    Validates if a rate is constant for each group and extracts a representative rate.
+
+    This function is central to ensuring data quality. It verifies the assumption
+    that for any given group (e.g., a specific mine and activity), the rate
+    does not change over time.
+
+    Process:
+    1.  Extracts a numeric value from the `si_rate_col` string for comparison.
+    2.  Counts and reports any rows where the rate could not be parsed.
+    3.  For each group, it calculates the number of unique rates and the numeric
+        difference between the minimum and maximum rates.
+    4.  A group is flagged as "variable" if it has more than one unique rate string
+        AND the numeric difference is greater than the `RATE_EPSILON` config value.
+    5.  Crucially, it also generates a `rate_descriptors_df` which contains a single
+        "standard rate" for EVERY group. This is determined by taking the FIRST
+        rate encountered for that group. This ensures that even if variability is
+        found and the user chooses to proceed, there is a deterministic rate to display.
+
+    Args:
+        df: The preprocessed DataFrame (must be in long format).
+        grouping_cols: The columns that define a unique group.
+        si_rate_col: The name of the SI rate column to validate.
+
+    Returns:
+        A dictionary containing the validation results:
+        - "is_consistent" (bool): True if all groups have constant rates.
+        - "variable_groups_df" (pl.DataFrame | None): A QA report DataFrame detailing
+          the groups with inconsistent rates, or None if all are consistent.
+        - "rate_descriptors_df" (pl.DataFrame): A DataFrame with `grouping_cols` and a
+          single representative rate (`first_si_rate`) for every group.
+        - "message" (str): A human-readable summary of the validation outcome.
+        - "unparsable_rate_count" (int): The number of rows where the rate could not be
+          parsed into a number, which are excluded from the check.
+    """
+    logger.info(f"Starting rate consistency validation for column: '{si_rate_col}'")
+
+    # Extract the first valid number from the rate string using regex.
+    df_with_numeric_rate = df.with_columns(
+        pl.col(si_rate_col)
+        .str.extract(r"^(-?\d+\.?\d*)", 1)
+        .cast(pl.Float64, strict=False)
+        .alias("numeric_si_rate")
+    )
+    
+    # Count rows where rate parsing failed to inform the user of potential data issues.
+    unparsable_count = df_with_numeric_rate.filter(pl.col("numeric_si_rate").is_null()).height
+    if unparsable_count > 0:
+        logger.warning(f"{unparsable_count} rows had unparsable or null rate values and were excluded from consistency validation.")
+
+    df_parsable = df_with_numeric_rate.filter(pl.col("numeric_si_rate").is_not_null())
+
+    if df_parsable.height == 0:
+        logger.warning("No numeric rate values found to perform consistency check.")
+        return {
+            "is_consistent": True, "variable_groups_df": None, "rate_descriptors_df": None,
+            "message": "No numeric rates to check.", "unparsable_rate_count": unparsable_count
+        }
+
+    # Group by the identifying columns and check for rate variations.
+    validation_summary = (
+        df_parsable.group_by(grouping_cols)
+        .agg(
+            pl.n_unique(si_rate_col).alias("n_unique_rates"),
+            pl.min("numeric_si_rate").alias("min_rate"),
+            pl.max("numeric_si_rate").alias("max_rate"),
+            # NEW: Collect all the actual rate strings for the min and max values
+            pl.col(si_rate_col).first().alias("example_rate"),
+            # NEW: Get the actual rate strings for min and max numeric values
+            pl.struct(["numeric_si_rate", si_rate_col])
+            .filter(pl.col("numeric_si_rate") == pl.col("numeric_si_rate").min())
+            .first()
+            .alias("struct_min"),
+            pl.struct(["numeric_si_rate", si_rate_col])
+            .filter(pl.col("numeric_si_rate") == pl.col("numeric_si_rate").max())
+            .first()
+            .alias("struct_max"),
+        )
+        .with_columns(
+            (pl.col("max_rate") - pl.col("min_rate")).alias("rate_diff"),
+            # NEW: Extract the actual rate strings with units
+            pl.col("struct_min").struct.field(si_rate_col).alias("min_rate_with_units"),
+            pl.col("struct_max").struct.field(si_rate_col).alias("max_rate_with_units"),
+        )
+    )
+
+    # A group is variable if it has >1 unique rate string AND the numeric difference > epsilon.
+    variable_groups = validation_summary.filter(
+        (pl.col("n_unique_rates") > 1) & (pl.col("rate_diff") > config.RATE_EPSILON)
+    )
+
+    # Generate the representative "standard rate" for every group by taking the first one found.
+    rate_descriptors = df.group_by(grouping_cols).agg(pl.col(si_rate_col).first().alias("first_si_rate"))
+
+    if variable_groups.height == 0:
+        logger.info("Rate consistency validation passed.")
+        return {
+            "is_consistent": True, "variable_groups_df": None, "rate_descriptors_df": rate_descriptors,
+            "message": "All rates are consistent within their groups.", "unparsable_rate_count": unparsable_count
+        }
+    else:
+        logger.warning(f"Rate consistency validation failed. Found {variable_groups.height} groups with variable rates.")
+        message = f"Detected {variable_groups.height} groups with inconsistent rates."
+        # Prepare the QA report for export with units included
+        qa_df = variable_groups.select(
+            grouping_cols + 
+            ["n_unique_rates", "min_rate_with_units", "max_rate_with_units", "rate_diff", "example_rate"]
+        ).sort(grouping_cols)
+        
+        return {
+            "is_consistent": False, "variable_groups_df": qa_df, "rate_descriptors_df": rate_descriptors,
+            "message": message, "unparsable_rate_count": unparsable_count
+        }
 
 
 def aggregate_data(
@@ -194,102 +308,97 @@ def aggregate_data(
     grouping_cols: List[str], 
     start_date_col: str, 
     driver_col: str,
-    date_trunc_unit: Optional[str] = None
-) -> pl.DataFrame:
+    date_trunc_unit: Optional[str] = None,
+    si_rate_col: Optional[str] = None
+) -> Tuple[pl.DataFrame, Optional[Dict[str, Any]]]:
     """
-    Perform time-series aggregation with monthly pivoting and ID generation.
+    Perform time-series aggregation with optional validation for rate consistency.
 
-    Steps:
-    1. Validate required columns exist
-    2. Preprocess (parse dates, cast drivers, truncate to configured unit)
-    3. Pivot values into monthly columns
-    4. Generate ID column from grouping columns
+    This function orchestrates the entire backend aggregation process.
+
+    Aggregation and Rate Handling Logic:
+    1.  **Preprocessing**: The data is cleaned, dates are parsed, and the driver column
+        is cast to a numeric type. If an `si_rate_col` is provided, it is passed
+        through this stage untouched.
+    2.  **Rate Validation**: If `si_rate_col` is present, the `_validate_rate_consistency`
+        function is called. This checks if rates are constant within each group.
+        The result of this check (a dictionary) determines if the process should
+        warn the user or block execution.
+    3.  **Pivoting**: The driver data is pivoted to create a wide table with monthly
+        columns, summing the driver values for each group.
+    4.  **ID Generation**: A unique composite ID is created for each group.
+    5.  **Rate Join**: The "standard rate" for each group (as determined by the
+        validation step) is joined back to the pivoted table as a single descriptive
+        column. This ensures the rate is always visible for context and auditing.
 
     Args:
-        df: Input DataFrame containing the data to aggregate
-        grouping_cols: Column names to group by (e.g., location, activity)
-        start_date_col: Column containing the start date values (string or datetime type)
-        driver_col: Column containing numeric driver values to sum
-        date_trunc_unit: Time unit for date truncation (e.g., "1mo", "1w", "1q").
-                        If None, defaults to config.DATE_TRUNC_UNIT
+        df: Input DataFrame.
+        grouping_cols: Column names to group by.
+        start_date_col: Column containing start dates.
+        driver_col: Column containing numeric driver values to sum.
+        date_trunc_unit: Time unit for date truncation (e.g., "1mo").
+        si_rate_col: Optional name of the SI rate column to validate and include.
 
     Returns:
-        pl.DataFrame: Pivoted DataFrame with ID column first, followed by grouping columns,
-                     then monthly columns (format: "YYYY-MM").
-                     
-                     The ID column contains hyphen-separated concatenation of grouping values.
-                     
-                     Example output structure:
-                     ID              | Name   | Age | Gender | 2024-01 | 2024-02
-                     Keegan-25-Male  | Keegan | 25  | Male   | 100     | 150
-                     
-                     Note: If no valid data remains after preprocessing, returns an empty DataFrame
-                     with ID and grouping columns.
-
-    Raises:
-        ValueError: If required columns are missing from input DataFrame
-        Exception: For unexpected errors during processing
+        A tuple containing:
+        - pl.DataFrame: The final pivoted DataFrame.
+        - Optional[Dict[str, Any]]: A dictionary with validation results if a rate
+          column was provided, otherwise None.
     """
+    validation_result = None
     try:
-        # Use provided date_trunc_unit or fall back to config default
-        # This allows for flexible aggregation periods while maintaining backward compatibility
         trunc_unit = date_trunc_unit or config.DATE_TRUNC_UNIT
-        
-        logger.info(
-            f"Starting aggregation. Grouping by: {grouping_cols}, "
-            f"Truncating to: {trunc_unit}"
-        )
+        logger.info(f"Starting aggregation. Grouping by: {grouping_cols}, Truncating to: {trunc_unit}")
 
-        # 1. Validate input
         _validate_columns(df, grouping_cols, start_date_col, driver_col)
 
-        # 2. Preprocess data
+        # Preprocess data, passing through the rate column if it exists.
         df_transformed = _preprocess_dataframe(
-            df, grouping_cols, start_date_col, driver_col, trunc_unit
+            df, grouping_cols, start_date_col, driver_col, trunc_unit,
+            passthrough_cols=[si_rate_col] if si_rate_col else None
         )
+
         if df_transformed.height == 0:
-            logger.warning(
-                "No valid data after preprocessing. Returning empty DataFrame. "
-                "This typically means all dates were invalid or missing."
-            )
-            # Return empty frame with ID and grouping columns
+            logger.warning("No valid data after preprocessing. Returning empty DataFrame.")
             empty_df = pl.DataFrame({col: [] for col in grouping_cols})
-            return _generate_id_column(empty_df, grouping_cols)
+            final_df = _generate_id_column(empty_df, grouping_cols)
+            return final_df, None
+            
+        # Validate rate consistency if a rate column is specified.
+        rate_descriptors_df = None
+        if si_rate_col and si_rate_col in df_transformed.columns:
+            validation_result = _validate_rate_consistency(df_transformed, grouping_cols, si_rate_col)
+            rate_descriptors_df = validation_result.get("rate_descriptors_df")
 
-        # 3. Pivot to monthly columns
+        # Pivot the driver data to monthly columns.
         pivoted = _pivot_monthly(df_transformed, grouping_cols)
-
-        # Identify month columns (all columns except grouping columns)
-        # Month columns are in "%Y-%m" format and will sort lexicographically in chronological order
-        month_cols = sorted(
-            [col for col in pivoted.columns if col not in grouping_cols]
-        )
+        
+        # Filter to only include columns that match YYYY-MM format.
+        # This prevents rate columns or other metadata from being treated as temporal data.
+        month_cols = sorted([col for col in pivoted.columns if _is_month_column(col)])
+        
         if not month_cols:
-            logger.warning("No month columns generated after pivot.")
-            result = pivoted.select(grouping_cols)
-            return _generate_id_column(result, grouping_cols)
-
-        # Ensure all month columns are numeric before we attempt to sum them
-        # This is a defensive check to prevent cryptic errors from sum_horizontal
-        for col in month_cols:
-            if pivoted.schema[col] not in (pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.UInt64, pl.UInt32):
-                raise TypeError(
-                    f"Expected month column '{col}' to be numeric, but got {pivoted.schema[col]}. "
-                    f"This indicates an issue with the pivot operation."
-                )
+            logger.warning("No month columns generated after pivot. Returning DataFrame with grouping columns only.")
+            result = pivoted.select(grouping_cols) if pivoted.height > 0 else pl.DataFrame({c:[] for c in grouping_cols})
+            final_df = _generate_id_column(result, grouping_cols)
+            return final_df, validation_result
 
         pivoted = pivoted.select(grouping_cols + month_cols).fill_null(0)
-
-        # 4. Generate ID column from grouping columns
-        # This creates a composite key by concatenating all grouping values with hyphens
-        # The ID column will be positioned as the first column in the output
+        
+        # Generate the composite ID column.
         pivoted_with_id = _generate_id_column(pivoted, grouping_cols)
 
-        logger.info(
-            f"Aggregation complete. Result shape: {pivoted_with_id.shape}. "
-            f"ID column generated from {len(grouping_cols)} grouping columns."
-        )
-        return pivoted_with_id
+        # Join the representative rate back to the pivoted data.
+        # The rate is positioned after grouping identifiers but before temporal data
+        # to maintain logical column ordering for downstream operations.
+        final_df = pivoted_with_id
+        if rate_descriptors_df is not None:
+            final_df = pivoted_with_id.join(rate_descriptors_df, on=grouping_cols, how="left")
+            final_df = final_df.rename({"first_si_rate": si_rate_col})
+            final_df = final_df.select(["ID"] + grouping_cols + [si_rate_col] + month_cols)
+
+        logger.info(f"Aggregation complete. Result shape: {final_df.shape}.")
+        return final_df, validation_result
 
     except Exception as e:
         logger.error(f"An error occurred during data aggregation: {e}")

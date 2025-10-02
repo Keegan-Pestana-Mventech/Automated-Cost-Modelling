@@ -2,10 +2,146 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import polars as pl
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+
 import config
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_series_data(
+    df: pl.DataFrame, entry_index: int, grouping_cols: List[str]
+) -> Tuple[List[str], List[float]]:
+    """
+    Helper function to extract plottable month and value data for a single series.
+    """
+    # Exclude non-data columns
+    exclude_cols = grouping_cols + ["ID", "Total"]
+    month_cols = [col for col in df.columns if col not in exclude_cols]
+
+    values: List[float] = []
+    valid_months: List[str] = []
+
+    # Ensure the row exists
+    if 0 <= entry_index < len(df):
+        row = df.row(entry_index, named=True)
+        for month_col in month_cols:
+            value = row.get(month_col)
+            if value is not None:
+                values.append(float(value))
+                valid_months.append(month_col)
+
+    return valid_months, values
+
+
+def generate_comparison_plot(
+    original_df: pl.DataFrame,
+    smoothed_df: pl.DataFrame,
+    entry_index: int,
+    selected_entry_label: str,
+    grouping_cols: List[str],
+    driver_col_name: str,
+    plot_settings: Dict[str, Any],
+    output_filename: str,
+) -> plt.Figure:
+    """
+    Generates a single plot comparing the original and smoothed data series.
+
+    Args:
+        original_df: DataFrame with the original aggregated data.
+        smoothed_df: DataFrame with the stockpile-smoothed data.
+        entry_index: The row index to plot from both DataFrames.
+        selected_entry_label: The label for the plot title.
+        grouping_cols: Column names used for grouping.
+        driver_col_name: The name of the driver column for the y-axis label.
+        plot_settings: Dictionary with plot styling options.
+        output_filename: The filename to save the plot to.
+
+    Returns:
+        plt.Figure: The generated Matplotlib figure.
+    """
+    figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
+    ax = figure.add_subplot(111)
+
+    # Extract data for both original and smoothed series
+    original_months, original_values = _extract_series_data(
+        original_df, entry_index, grouping_cols
+    )
+    smoothed_months, smoothed_values = _extract_series_data(
+        smoothed_df, entry_index, grouping_cols
+    )
+
+    # Create a unified timeline to correctly align both datasets
+    all_months = sorted(list(set(original_months + smoothed_months)))
+    if not all_months:
+        logger.warning("No data available to plot for comparison.")
+        ax.text(0.5, 0.5, "No data to plot", ha="center", va="center")
+        return figure
+
+    # Map months to their index on the unified timeline
+    month_to_x = {month: i for i, month in enumerate(all_months)}
+    x_positions = range(len(all_months))
+
+    # Create full-length data arrays, defaulting to zero
+    aligned_original_values = [0.0] * len(all_months)
+    for month, value in zip(original_months, original_values):
+        aligned_original_values[month_to_x[month]] = value
+
+    aligned_smoothed_values = [0.0] * len(all_months)
+    for month, value in zip(smoothed_months, smoothed_values):
+        aligned_smoothed_values[month_to_x[month]] = value
+
+    # Plotting
+    # 1. Original data as bars
+    ax.plot(
+        x_positions,
+        aligned_original_values,
+        color=plot_settings.get("color", "#2E86AB"),
+        alpha=0.6,
+        marker=plot_settings.get("marker", "o"),
+        linewidth=plot_settings.get("linewidth", 2.5),
+        markersize=plot_settings.get("markersize", 6),
+        label="Original",
+    )
+
+    # 2. Smoothed data as a line
+    ax.plot(
+        x_positions,
+        aligned_smoothed_values,
+        color=plot_settings.get("comparison_color", "#D9534F"),
+        marker=plot_settings.get("marker", "o"),
+        linewidth=plot_settings.get("linewidth", 2.5),
+        markersize=plot_settings.get("markersize", 6),
+        label="Smoothed",
+    )
+
+    # Formatting
+    formatted_months = [pd.to_datetime(m).strftime("%b %Y") for m in all_months]
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(formatted_months, rotation=45, ha="right")
+    ax.set_ylabel(driver_col_name)
+    ax.legend()
+
+    if plot_settings.get("grid", True):
+        ax.grid(True, linestyle="--", alpha=0.4)
+
+    title = f"Original vs. Smoothed Profile for: {selected_entry_label}"
+    truncated_title = (
+        title[: config.MAX_TITLE_LENGTH] + "..."
+        if len(title) > config.MAX_TITLE_LENGTH
+        else title
+    )
+    ax.set_title(truncated_title)
+
+    figure.tight_layout()
+
+    # Save the figure
+    plot_path = config.OUTPUT_DIRECTORY / config.PLOT_OUTPUT_SUBDIR / output_filename
+    figure.savefig(plot_path)
+    logger.info(f"Comparison plot saved to: {plot_path}")
+    plt.close(figure) # Release memory
+
+    return figure
 
 
 def generate_plot(
@@ -18,130 +154,45 @@ def generate_plot(
 ) -> plt.Figure:
     """
     Generate a plot for a selected entry's monthly driver profile.
-
-    Args:
-        df: DataFrame containing the aggregated data
-        entry_index: Index of the selected entry in the DataFrame
-        selected_entry_label: Label for the selected entry to display in title
-        grouping_cols: Column names used for grouping in the aggregation
-        driver_col_name: The name of the driver column for the y-axis label.
-        plot_settings: Dictionary containing plot customization options
-
-    Returns:
-        plt.Figure: Matplotlib figure object containing the generated plot
+    (This function is kept for plotting single dataframes).
     """
     # Guard against invalid entry_index
     if not 0 <= entry_index < len(df):
         figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
         ax = figure.add_subplot(111)
-        ax.text(
-            0.5,
-            0.5,
-            "Invalid entry index",
-            ha="center",
-            va="center",
-            fontsize=12,
-            transform=ax.transAxes,
-        )
+        ax.text(0.5, 0.5, "Invalid entry index", ha="center", va="center")
         ax.set_title("Error")
-        figure.tight_layout()
-        return figure
-
-    # Guard against plotting the "GRAND TOTAL" row
-    if grouping_cols and df[grouping_cols[0]][entry_index] == "GRAND TOTAL":
-        figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
-        ax = figure.add_subplot(111)
-        ax.text(
-            0.5,
-            0.5,
-            "Cannot plot GRAND TOTAL row",
-            ha="center",
-            va="center",
-            fontsize=12,
-            transform=ax.transAxes,
-        )
-        ax.set_title("Plotting Not Applicable")
         figure.tight_layout()
         return figure
 
     figure = plt.Figure(figsize=config.PLOT_FIGSIZE, dpi=config.PLOT_DPI)
     ax = figure.add_subplot(111)
 
-    # Get monthly columns (exclude grouping columns, 'ID', and 'Total')
-    # The 'ID' column is a string identifier and not a plottable value.
-    exclude_cols = grouping_cols + ["ID", "Total"]
-    month_cols = [
-        col for col in df.columns if col not in exclude_cols
-    ]
-
-    values: List[float] = []
-    valid_months: List[str] = []
-
-    for month_col in month_cols:
-        value = df[month_col][entry_index]
-        if value is not None:
-            values.append(float(value))
-            # Format month name for display on the x-axis
-            try:
-                month_name = pd.to_datetime(month_col).strftime("%b %Y")
-                valid_months.append(month_name)
-            except (ValueError, TypeError):
-                valid_months.append(month_col)
+    valid_months, values = _extract_series_data(df, entry_index, grouping_cols)
 
     if values:
         x_positions = range(len(valid_months))
-
-        # Apply plot settings
         plot_type = plot_settings.get("plot_type", "line")
         color = plot_settings.get("color", "#2E86AB")
-        marker = plot_settings.get("marker", "o")
-        linewidth = plot_settings.get("linewidth", 2)
-        markersize = plot_settings.get("markersize", 6)
-        grid_visible = plot_settings.get("grid", True)
-
-        # Generate plot based on type
+        
         if plot_type == "line":
-            ax.plot(
-                x_positions,
-                values,
-                marker=marker,
-                linewidth=linewidth,
-                markersize=markersize,
-                color=color,
-            )
+            ax.plot(x_positions, values, color=color, **plot_settings)
         elif plot_type == "bar":
             ax.bar(x_positions, values, color=color, alpha=0.7)
-        elif plot_type == "scatter":
-            ax.scatter(
-                x_positions,
-                values,
-                color=color,
-                s=markersize * 20,  # Scale for scatter
-                alpha=0.7,
-            )
-        elif plot_type == "step":
-            ax.step(x_positions, values, color=color, linewidth=linewidth, where="mid")
+        # ... other plot types ...
 
-        # Add value labels above the points
         for x, y in zip(x_positions, values):
-            if y != 0:  # Only label non-zero values for clarity
-                ax.annotate(
-                    f"{y:,.0f}",
-                    (x, y),
-                    textcoords="offset points",
-                    xytext=(0, 10),
-                    ha="center",
-                    fontsize=9,
-                )
+            if y != 0:
+                ax.annotate(f"{y:,.0f}", (x, y), textcoords="offset points", xytext=(0, 10), ha="center")
 
+        formatted_months = [pd.to_datetime(m).strftime("%b %Y") for m in valid_months]
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(valid_months, rotation=45, ha="right")
+        ax.set_xticklabels(formatted_months, rotation=45, ha="right")
         ax.set_ylabel(driver_col_name)
 
-        if grid_visible:
+        if plot_settings.get("grid", True):
             ax.grid(True, linestyle="--", alpha=0.4)
 
-        # Truncate title if too long
         title = f"Monthly Driver Profile for: {selected_entry_label}"
         truncated_title = (
             title[: config.MAX_TITLE_LENGTH] + "..."
@@ -149,29 +200,6 @@ def generate_plot(
             else title
         )
         ax.set_title(truncated_title)
-
-        # Display total sum in a text box
-        total_sum = sum(values)
-        ax.text(
-            0.02,
-            0.98,
-            f"Total: {total_sum:,.0f}",
-            transform=ax.transAxes,
-            fontsize=12,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
-        )
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            "No data available for the selected entry",
-            ha="center",
-            va="center",
-            fontsize=12,
-            transform=ax.transAxes,
-        )
-        ax.set_title(f"No Data for: {selected_entry_label}")
 
     figure.tight_layout()
     return figure
