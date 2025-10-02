@@ -31,6 +31,7 @@ jobs:
         python -c "import fastexcel; print('fastexcel location:', fastexcel.__file__)"
         python -c "import pandas; print('pandas version:', pandas.__version__)"
         python -c "import polars; print('polars version:', polars.__version__)"
+        python -c "import pyarrow; print('pyarrow version:', pyarrow.__version__)"
         
     - name: Build with PyInstaller
       run: |
@@ -44,6 +45,9 @@ jobs:
         --hidden-import=pandas `
         --hidden-import=numpy `
         --hidden-import=polars `
+        --hidden-import=pyarrow `
+        --hidden-import=pyarrow.parquet `
+        --collect-all pyarrow `
         --hidden-import=matplotlib `
         --hidden-import=pint `
         --collect-submodules fastexcel `
@@ -65,7 +69,7 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AutomatedCostModelling-${{ github.sha }}
+        name: AutomatedCostModelling
         path: dist/AutomatedCostModelling.exe
         retention-days: 30
         
@@ -73,7 +77,7 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: build-logs-${{ github.sha }}
+        name: build-logs
         path: |
           build/
           *.spec

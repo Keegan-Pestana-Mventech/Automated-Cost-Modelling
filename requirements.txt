@@ -5,3 +5,4 @@ pandas==2.3.3
 pint==0.25
 polars==1.33.1
 python_dateutil==2.9.0.post0
+pyarrow==19.0.0
