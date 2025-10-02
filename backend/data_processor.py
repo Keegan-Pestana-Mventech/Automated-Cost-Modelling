@@ -254,9 +254,9 @@ def _validate_rate_consistency(
             pl.n_unique(si_rate_col).alias("n_unique_rates"),
             pl.min("numeric_si_rate").alias("min_rate"),
             pl.max("numeric_si_rate").alias("max_rate"),
-            # NEW: Collect all the actual rate strings for the min and max values
+            # Collect all the actual rate strings for the min and max values
             pl.col(si_rate_col).first().alias("example_rate"),
-            # NEW: Get the actual rate strings for min and max numeric values
+            # Get the actual rate strings for min and max numeric values
             pl.struct(["numeric_si_rate", si_rate_col])
             .filter(pl.col("numeric_si_rate") == pl.col("numeric_si_rate").min())
             .first()
@@ -268,7 +268,7 @@ def _validate_rate_consistency(
         )
         .with_columns(
             (pl.col("max_rate") - pl.col("min_rate")).alias("rate_diff"),
-            # NEW: Extract the actual rate strings with units
+            # Extract the actual rate strings with units
             pl.col("struct_min").struct.field(si_rate_col).alias("min_rate_with_units"),
             pl.col("struct_max").struct.field(si_rate_col).alias("max_rate_with_units"),
         )
