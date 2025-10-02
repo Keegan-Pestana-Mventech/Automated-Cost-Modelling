@@ -32,13 +32,28 @@ jobs:
         python -c "import pandas; print('pandas version:', pandas.__version__)"
         python -c "import polars; print('polars version:', polars.__version__)"
         python -c "import pyarrow; print('pyarrow version:', pyarrow.__version__)"
+        python -c "import sys; import os; print('Python path:', sys.executable)"
+        
+    - name: Create PyInstaller hook for fastexcel
+      run: |
+        $hookContent = @"
+        from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs
+        
+        datas, binaries, hiddenimports = collect_all('fastexcel')
+        binaries += collect_dynamic_libs('fastexcel')
+        "@
+        New-Item -ItemType Directory -Force -Path "hooks"
+        Set-Content -Path "hooks/hook-fastexcel.py" -Value $hookContent
+      shell: pwsh
         
     - name: Build with PyInstaller
       run: |
         pyinstaller --onefile --windowed --name AutomatedCostModelling `
         --add-data "backend;backend" `
         --add-data "frontend;frontend" `
+        --additional-hooks-dir=hooks `
         --hidden-import=fastexcel `
+        --hidden-import=fastexcel._fastexcel `
         --collect-all fastexcel `
         --collect-binaries fastexcel `
         --copy-metadata fastexcel `
@@ -47,11 +62,29 @@ jobs:
         --hidden-import=polars `
         --hidden-import=pyarrow `
         --hidden-import=pyarrow.parquet `
+        --hidden-import=pyarrow._fs `
+        --hidden-import=pyarrow._hdfs `
         --collect-all pyarrow `
         --hidden-import=matplotlib `
         --hidden-import=pint `
         --collect-submodules fastexcel `
+        --collect-submodules pyarrow `
+        --runtime-hook=runtime_hook.py `
         main.py
+      shell: pwsh
+        
+    - name: Create runtime hook
+      run: |
+        $runtimeHook = @"
+        import os
+        import sys
+        
+        # Add the bundled directory to PATH for DLL loading
+        if hasattr(sys, '_MEIPASS'):
+            os.environ['PATH'] = sys._MEIPASS + os.pathsep + os.environ.get('PATH', '')
+        "@
+        Set-Content -Path "runtime_hook.py" -Value $runtimeHook
+      shell: pwsh
         
     - name: Verify build output
       run: |
