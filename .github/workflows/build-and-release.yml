@@ -28,22 +28,21 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Verify test dependencies
+    - name: Create test environment directories
       run: |
-        pip list
-        python -c "import polars; print('polars version:', polars.__version__)"
-        python -c "import numpy; print('numpy version:', numpy.__version__)"
-        python -c "import matplotlib; print('matplotlib version:', matplotlib.__version__)"
-        python -c "import pint; print('pint version:', pint.__version__)"
-        
-    - name: Create output directories
-      run: |
+        mkdir -p resources/data/plots
         mkdir -p output/plots
+        
+    - name: Set CI environment variable
+      run: |
+        echo "CI_ENVIRONMENT=true" >> $GITHUB_ENV
         
     - name: Run backend tests
       run: |
         python tests/test_backend.py
       continue-on-error: false
+      env:
+        CI_ENVIRONMENT: true
         
     - name: Upload test artifacts
       if: always()
@@ -51,6 +50,7 @@ jobs:
       with:
         name: test-outputs
         path: |
+          resources/data/plots/
           output/
           
     - name: Upload test logs
@@ -59,6 +59,7 @@ jobs:
       with:
         name: test-failure-logs
         path: |
+          resources/data/
           output/
           *.log
 
@@ -80,14 +81,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
-        
-    - name: Debug - Verify package installation
-      run: |
-        pip list
-        python -c "import fastexcel; print('fastexcel location:', fastexcel.__file__)"
-        python -c "import pandas; print('pandas version:', pandas.__version__)"
-        python -c "import polars; print('polars version:', polars.__version__)"
-        python -c "import pyarrow; print('pyarrow version:', pyarrow.__version__)"
         
     - name: Build with PyInstaller
       run: |
@@ -138,50 +131,3 @@ jobs:
         path: |
           build/
           *.spec
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Download build artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: AutomatedCostModelling
-        path: ./dist
-        
-    - name: Get version
-      id: version
-      run: |
-        echo "VERSION=v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.version.outputs.VERSION }}
-        name: Release ${{ steps.version.outputs.VERSION }}
-        draft: false
-        prerelease: false
-        files: |
-          dist/AutomatedCostModelling.exe
-        body: |
-          ## Automated Cost Modelling Release
-          
-          **Build Date:** ${{ github.event.head_commit.timestamp }}
-          **Commit:** ${{ github.sha }}
-          **Branch:** ${{ github.ref_name }}
-          
-          ### Changes
-          ${{ github.event.head_commit.message }}
-          
-          ### Installation
-          Download the `AutomatedCostModelling.exe` file and run it directly on Windows.
-          
-          ### Testing Status
-          ✅ All tests passed before build
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

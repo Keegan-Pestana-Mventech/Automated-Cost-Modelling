@@ -1,18 +1,24 @@
 from pathlib import Path
+import os
 
-# Set the base directory to the specified resources folder
-BASE_DIR = Path(r"C:\Users\KeeganPestana\Documents\Mventech\Automated-Cost-Modelling\resources")
+# Detect if running in CI/CD environment
+IS_CI_ENVIRONMENT = os.environ.get('CI_ENVIRONMENT', 'false').lower() == 'true'
 
-# The name of the Excel file to be processed.
-# This file should be in the base directory.
-EXCEL_FILE = BASE_DIR / "REDISTRIBUTED MY26 Deswik Dump Summary Mine Physicals 22 August 2025.xlsx"
+if IS_CI_ENVIRONMENT:
+    # Use relative paths for CI/CD testing
+    BASE_DIR = Path(__file__).parent / "resources"
+    EXCEL_FILE = BASE_DIR / "test_data.xlsx"  # Placeholder for CI
+else:
+    # Use the original Windows paths for local development
+    BASE_DIR = Path(r"C:\Users\KeeganPestana\Documents\Mventech\Automated-Cost-Modelling\resources")
+    EXCEL_FILE = BASE_DIR / "REDISTRIBUTED MY26 Deswik Dump Summary Mine Physicals 22 August 2025.xlsx"
 
 # The directory where output files (checkpoints, logs, final data) will be saved.
 # This directory will be created if it doesn't exist.
 OUTPUT_DIRECTORY = BASE_DIR / "data"
 
 # Ensure output directory exists
-OUTPUT_DIRECTORY.mkdir(exist_ok=True)
+OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
 # Default sheet name to load
 DEFAULT_SHEET_NAME = "Deswik Dump"
