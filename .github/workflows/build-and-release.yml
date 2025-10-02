@@ -17,7 +17,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version: '3.11'
         
     - name: Install dependencies
       run: |
@@ -72,7 +72,6 @@ jobs:
       with:
         name: AutomatedCostModelling
         path: dist/AutomatedCostModelling.exe
-        retention-days: 30
         
     - name: Upload Build Logs
       if: failure()
@@ -82,4 +81,4 @@ jobs:
         path: |
           build/
           *.spec
-        retention-days: 7
+       
