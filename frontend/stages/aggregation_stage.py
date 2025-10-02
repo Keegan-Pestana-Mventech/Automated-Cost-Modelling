@@ -217,7 +217,7 @@ class AggregationStage:
                 if validation_result["is_consistent"]:
                     success_msg += "Rate consistency validation passed.\n"
                 else:
-                    success_msg += "WARNING: Rate variability was detected and acknowledged.\n"
+                    success_msg += "Rate variability was detected and acknowledged.\n"
 
             success_msg += (
                 f"\nExported to: {export_path}\n\n"
