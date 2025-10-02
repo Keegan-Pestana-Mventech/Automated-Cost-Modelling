@@ -22,6 +22,7 @@ class AppState:
             "activity": [],
             "timing": [],
             "drivers": [],
+            "rate": [],
         }
 
         self.inspection_log: str = ""
@@ -34,7 +35,7 @@ class AppState:
         """Export final aggregated dataframe to Excel, clearing the directory first."""
         # Clear previous output files from the directory
         for file in self.output_directory.iterdir():
-            if file.is_file():
+            if file.is_file() and file.name.endswith("_aggregated.xlsx"):
                 file.unlink()
 
         if self.final_dataframe is None:
@@ -45,6 +46,43 @@ class AppState:
 
         # Convert Polars DataFrame -> Pandas -> Excel
         df_pandas = self.final_dataframe.to_pandas()
+        df_pandas.to_excel(export_path, index=False, engine="openpyxl")
+
+        return export_path
+
+    def export_raw_data(self, df: pl.DataFrame) -> Path:
+        """Exports the raw DataFrame with SI conversions to an Excel file."""
+        if df is None:
+            raise ValueError("DataFrame to export cannot be None.")
+        
+        if not self.sheet_name:
+            raise ValueError("Sheet name is not set. Cannot create a unique filename.")
+
+        safe_name = self.sheet_name.replace(" ", "_")
+        export_path = self.output_directory / f"{safe_name}_dataframe_raw.xlsx"
+
+        # Convert Polars DataFrame -> Pandas -> Excel
+        df_pandas = df.to_pandas()
+        df_pandas.to_excel(export_path, index=False, engine="openpyxl")
+
+        return export_path
+
+    def export_qa_data(self, df: pl.DataFrame) -> Path:
+        """Exports the rate variability QA DataFrame to an Excel file."""
+        if df is None:
+            raise ValueError("QA DataFrame to export cannot be None.")
+        
+        if not self.sheet_name:
+            raise ValueError("Sheet name is not set. Cannot create a unique filename.")
+
+        safe_name = self.sheet_name.replace(" ", "_")
+        export_path = self.output_directory / f"{safe_name}_rate_variability_qa.xlsx"
+        
+        # Overwrite previous QA file if it exists
+        if export_path.exists():
+            export_path.unlink()
+
+        df_pandas = df.to_pandas()
         df_pandas.to_excel(export_path, index=False, engine="openpyxl")
 
         return export_path
@@ -64,7 +102,4 @@ class AppState:
         df_pandas = df.to_pandas()
         df_pandas.to_excel(export_path, index=False, engine="openpyxl")
 
-        # Note: This function intentionally does not clear the output directory
-        # to allow both transformed and aggregated files to coexist.
-        # The directory is cleared by the final `export_aggregated_data` call.
         return export_path

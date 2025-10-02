@@ -10,7 +10,7 @@ from .stages import (
     AggregationStage,
     VisualizationStage,
 )
-from .ui_components import InspectionPanel
+from .ui_components.inspection_panel import InspectionPanel
 from backend.utils import DataFrameInspector
 
 
