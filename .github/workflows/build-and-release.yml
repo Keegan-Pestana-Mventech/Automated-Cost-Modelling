@@ -27,7 +27,7 @@ jobs:
         
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --name AutomatedCostModelling --add-data "backend;backend" --add-data "frontend;frontend" main.py
+        pyinstaller --onefile --windowed --name AutomatedCostModelling --add-data "backend;backend" --add-data "frontend;frontend" --add-data "REDISTRIBUTED MY26 Deswik Dump Summary Mine Physicals 22 August 2025.xlsx;." main.py
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
