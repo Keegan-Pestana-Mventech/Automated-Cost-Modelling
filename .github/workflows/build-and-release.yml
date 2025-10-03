@@ -1,0 +1,133 @@
+name: Build and Test Application
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create test environment directories
+      run: |
+        mkdir -p resources/data/plots
+        mkdir -p output/plots
+        
+    - name: Set CI environment variable
+      run: |
+        echo "CI_ENVIRONMENT=true" >> $GITHUB_ENV
+        
+    - name: Run backend tests
+      run: |
+        python tests/test_backend.py
+      continue-on-error: false
+      env:
+        CI_ENVIRONMENT: true
+        
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-outputs
+        path: |
+          resources/data/plots/
+          output/
+          
+    - name: Upload test logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-failure-logs
+        path: |
+          resources/data/
+          output/
+          *.log
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name AutomatedCostModelling `
+        --add-data "backend;backend" `
+        --add-data "frontend;frontend" `
+        --hidden-import=fastexcel `
+        --hidden-import=fastexcel._fastexcel `
+        --collect-all fastexcel `
+        --collect-binaries fastexcel `
+        --copy-metadata fastexcel `
+        --hidden-import=pandas `
+        --hidden-import=numpy `
+        --hidden-import=polars `
+        --hidden-import=pyarrow `
+        --hidden-import=pyarrow.parquet `
+        --collect-all pyarrow `
+        --hidden-import=matplotlib `
+        --hidden-import=pint `
+        --collect-submodules fastexcel `
+        main.py
+        
+    - name: Verify build output
+      run: |
+        dir dist
+        if (Test-Path "dist/AutomatedCostModelling.exe") {
+          Write-Host "Build successful - EXE found"
+          $size = (Get-Item "dist/AutomatedCostModelling.exe").Length / 1MB
+          Write-Host "EXE size: $([math]::Round($size, 2)) MB"
+        } else {
+          Write-Error "Build failed - EXE not found"
+          exit 1
+        }
+      shell: pwsh
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: AutomatedCostModelling
+        path: dist/AutomatedCostModelling.exe
+        retention-days: 30
+        
+    - name: Upload Build Logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          build/
+          *.spec
