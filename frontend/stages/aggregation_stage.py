@@ -135,10 +135,12 @@ class AggregationStage:
             + self.context.state.selected_columns["activity"]
         )
 
+        rate_col = None
         si_rate_col = None
         rate_cols = self.context.state.selected_columns.get("rate", [])
         if rate_cols and rate_cols[0]:
-            si_rate_col = config.RATE_COLUMN_ALIAS.format(rate_cols[0])
+            rate_col = rate_cols[0]
+            si_rate_col = config.RATE_COLUMN_ALIAS.format(rate_col)
 
         try:
             final_df, validation_result = data_processor.aggregate_data(
@@ -146,6 +148,7 @@ class AggregationStage:
                 grouping_cols=grouping_cols,
                 start_date_col=start_date_col,
                 driver_col=driver_col,
+                rate_col=rate_col,
                 si_rate_col=si_rate_col,
             )
 
@@ -194,9 +197,15 @@ class AggregationStage:
 
             total = 0
             if final_df.height > 0:
+                non_month_cols = grouping_cols + ["ID"]
+                if rate_col:
+                    non_month_cols.append(rate_col)
+                if si_rate_col:
+                    non_month_cols.append(si_rate_col)
+
                 month_cols = [
                     col for col in final_df.columns 
-                    if col not in (grouping_cols + ["ID"] + ([si_rate_col] if si_rate_col else []))
+                    if col not in non_month_cols
                 ]
                 
                 if month_cols:

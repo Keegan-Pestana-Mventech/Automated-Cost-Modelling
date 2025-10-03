@@ -309,6 +309,7 @@ def aggregate_data(
     start_date_col: str, 
     driver_col: str,
     date_trunc_unit: Optional[str] = None,
+    rate_col: Optional[str] = None,
     si_rate_col: Optional[str] = None
 ) -> Tuple[pl.DataFrame, Optional[Dict[str, Any]]]:
     """
@@ -337,6 +338,7 @@ def aggregate_data(
         start_date_col: Column containing start dates.
         driver_col: Column containing numeric driver values to sum.
         date_trunc_unit: Time unit for date truncation (e.g., "1mo").
+        rate_col: Optional name of the original rate column to include.
         si_rate_col: Optional name of the SI rate column to validate and include.
 
     Returns:
@@ -352,10 +354,16 @@ def aggregate_data(
 
         _validate_columns(df, grouping_cols, start_date_col, driver_col)
 
-        # Preprocess data, passing through the rate column if it exists.
+        # Preprocess data, passing through the rate columns if they exist.
+        passthrough = []
+        if rate_col:
+            passthrough.append(rate_col)
+        if si_rate_col:
+            passthrough.append(si_rate_col)
+        
         df_transformed = _preprocess_dataframe(
             df, grouping_cols, start_date_col, driver_col, trunc_unit,
-            passthrough_cols=[si_rate_col] if si_rate_col else None
+            passthrough_cols=passthrough if passthrough else None
         )
 
         if df_transformed.height == 0:
@@ -366,9 +374,16 @@ def aggregate_data(
             
         # Validate rate consistency if a rate column is specified.
         rate_descriptors_df = None
+        original_rate_descriptors_df = None
         if si_rate_col and si_rate_col in df_transformed.columns:
             validation_result = _validate_rate_consistency(df_transformed, grouping_cols, si_rate_col)
             rate_descriptors_df = validation_result.get("rate_descriptors_df")
+            
+            # Also create a descriptor for the original rate column to be included in the final output.
+            if rate_col and rate_col in df_transformed.columns:
+                original_rate_descriptors_df = df_transformed.group_by(grouping_cols).agg(
+                    pl.col(rate_col).first()
+                )
 
         # Pivot the driver data to monthly columns.
         pivoted = _pivot_monthly(df_transformed, grouping_cols)
@@ -388,14 +403,26 @@ def aggregate_data(
         # Generate the composite ID column.
         pivoted_with_id = _generate_id_column(pivoted, grouping_cols)
 
-        # Join the representative rate back to the pivoted data.
-        # The rate is positioned after grouping identifiers but before temporal data
-        # to maintain logical column ordering for downstream operations.
+        # Join the representative rates back to the pivoted data.
         final_df = pivoted_with_id
         if rate_descriptors_df is not None:
-            final_df = pivoted_with_id.join(rate_descriptors_df, on=grouping_cols, how="left")
+            # Join SI rate descriptor
+            final_df = final_df.join(rate_descriptors_df, on=grouping_cols, how="left")
             final_df = final_df.rename({"first_si_rate": si_rate_col})
-            final_df = final_df.select(["ID"] + grouping_cols + [si_rate_col] + month_cols)
+
+            # Join original rate descriptor if it was created
+            if original_rate_descriptors_df is not None:
+                final_df = final_df.join(original_rate_descriptors_df, on=grouping_cols, how="left")
+            
+            # Position rate columns after grouping identifiers but before temporal data.
+            cols_to_select = ["ID"] + grouping_cols
+            if rate_col and rate_col in final_df.columns:
+                cols_to_select.append(rate_col)
+            if si_rate_col and si_rate_col in final_df.columns:
+                 cols_to_select.append(si_rate_col)
+            cols_to_select.extend(month_cols)
+
+            final_df = final_df.select(cols_to_select)
 
         logger.info(f"Aggregation complete. Result shape: {final_df.shape}.")
         return final_df, validation_result

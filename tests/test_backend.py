@@ -333,12 +333,13 @@ def test_rate_validation_and_aggregation():
     
     agg_df_consistent, val_res_consistent = data_processor.aggregate_data(
         df=df_consistent_si, grouping_cols=grouping_cols, start_date_col=start_date_col,
-        driver_col=driver_col, si_rate_col=si_rate_col
+        driver_col=driver_col, rate_col=rate_col, si_rate_col=si_rate_col
     )
     
     assert val_res_consistent['is_consistent'] is True
     assert val_res_consistent['variable_groups_df'] is None
     assert val_res_consistent['unparsable_rate_count'] == 0
+    assert rate_col in agg_df_consistent.columns
     assert si_rate_col in agg_df_consistent.columns
     assert agg_df_consistent.height == 3
     print("[SUCCESS] Consistent rates handled correctly.\n")
@@ -348,14 +349,16 @@ def test_rate_validation_and_aggregation():
     df_variable = create_df_with_variable_rates()
     df_variable_si = unit_converter.add_si_rate_column(df_variable, rate_col)
     
-    _, val_res_variable = data_processor.aggregate_data(
+    agg_df_variable, val_res_variable = data_processor.aggregate_data(
         df=df_variable_si, grouping_cols=grouping_cols, start_date_col=start_date_col,
-        driver_col=driver_col, si_rate_col=si_rate_col
+        driver_col=driver_col, rate_col=rate_col, si_rate_col=si_rate_col
     )
 
     assert val_res_variable['is_consistent'] is False
     assert val_res_variable['variable_groups_df'] is not None
     assert val_res_variable['variable_groups_df'].height == 1
+    assert rate_col in agg_df_variable.columns
+    assert si_rate_col in agg_df_variable.columns
     print("[SUCCESS] Variable rates detected correctly.\n")
 
     # --- Test Case 3: Unparsable Rates ---
@@ -363,13 +366,15 @@ def test_rate_validation_and_aggregation():
     df_unparsable = create_df_with_unparsable_rates()
     df_unparsable_si = unit_converter.add_si_rate_column(df_unparsable, rate_col)
     
-    _, val_res_unparsable = data_processor.aggregate_data(
+    agg_df_unparsable, val_res_unparsable = data_processor.aggregate_data(
         df=df_unparsable_si, grouping_cols=grouping_cols, start_date_col=start_date_col,
-        driver_col=driver_col, si_rate_col=si_rate_col
+        driver_col=driver_col, rate_col=rate_col, si_rate_col=si_rate_col
     )
     
     assert val_res_unparsable['is_consistent'] is True 
     assert val_res_unparsable['unparsable_rate_count'] == 1
+    assert rate_col in agg_df_unparsable.columns
+    assert si_rate_col in agg_df_unparsable.columns
     print("[SUCCESS] Unparsable rates were correctly counted and ignored by validation.\n")
 
     # --- Test Case 4: Epsilon Check ---
@@ -377,15 +382,17 @@ def test_rate_validation_and_aggregation():
     df_epsilon = create_df_for_epsilon_check()
     df_epsilon_si = unit_converter.add_si_rate_column(df_epsilon, rate_col)
 
-    _, val_res_epsilon = data_processor.aggregate_data(
+    agg_df_epsilon, val_res_epsilon = data_processor.aggregate_data(
         df=df_epsilon_si, grouping_cols=grouping_cols, start_date_col=start_date_col,
-        driver_col=driver_col, si_rate_col=si_rate_col
+        driver_col=driver_col, rate_col=rate_col, si_rate_col=si_rate_col
     )
 
     assert val_res_epsilon['is_consistent'] is False
     assert val_res_epsilon['variable_groups_df'].height == 1
     variable_group = val_res_epsilon['variable_groups_df'][0, "Location"]
     assert variable_group == "Pit D"
+    assert rate_col in agg_df_epsilon.columns
+    assert si_rate_col in agg_df_epsilon.columns
     print(f"[SUCCESS] Epsilon check correctly identified variable group 'Pit D'.\n")
 
     print("[SUCCESS] All rate validation tests completed.\n")
