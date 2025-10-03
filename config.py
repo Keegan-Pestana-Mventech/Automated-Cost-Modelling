@@ -29,7 +29,7 @@ DEFAULT_COLUMN_SELECTIONS = {
     "activity": ["Excavation Type", "Material Type"],
     "timing": ["Start", "Finish"],
     "drivers": ["Linear Meters"],
-    "rate": ["Rate"],  # Added Rate category
+    "rate": ["Rate"],  
 }
 
 # =============================================================================
@@ -80,7 +80,8 @@ DRIVER_THRESHOLDS = {
 # PLOTTING
 # =============================================================================
 # Default figure size (width, height) in inches for plots.
-PLOT_FIGSIZE = (10, 6)
+# Reduced slightly to fit better on smaller displays
+PLOT_FIGSIZE = (9, 5.5)
 
 # Dots per inch for plot figures.
 PLOT_DPI = 100
@@ -125,9 +126,9 @@ DEFAULT_PLOT_SETTINGS = {
 # =============================================================================
 # UI & STYLING
 # =============================================================================
-# Initial window size.
-WINDOW_GEOMETRY = "1200x900"
-WINDOW_MIN_SIZE = (1100, 800)
+# Initial window size - adjusted for better compatibility with smaller displays
+WINDOW_GEOMETRY = "1200x850"
+WINDOW_MIN_SIZE = (1000, 700)
 
 # Centralized font configuration.
 FONT_CONFIG = {

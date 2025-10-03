@@ -126,6 +126,20 @@ class SheetInputStage:
                 )
             )
 
+            # Export the raw selected sheet immediately after loading
+            try:
+                export_path = self.context.state.export_selected_sheet()
+                self.context.log(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] EXPORTED: Raw selected sheet saved to {export_path.name}\n"
+                )
+                print(f"Raw sheet exported to: {export_path}")
+            except Exception as export_error:
+                # Log the error but don't stop the workflow
+                self.context.log(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] WARNING: Failed to export raw sheet: {export_error}\n"
+                )
+                print(f"Warning: Could not export raw sheet - {export_error}")
+
             self.on_success()
 
         except Exception as e:

@@ -27,9 +27,10 @@ class PlotView(ttk.Frame):
         self.driver_col = driver_col
         self.filtered_dataframe: Optional[pl.DataFrame] = None
 
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=3)
-        self.rowconfigure(0, weight=1)
+        # Configure main grid - critical for proper expansion
+        self.columnconfigure(0, weight=0, minsize=250)  # Left panel - fixed minimum width
+        self.columnconfigure(1, weight=1)  # Right panel - expands
+        self.rowconfigure(0, weight=1)  # Main content row expands
 
         # Matplotlib Figure and Canvas
         self.plot_figure, self.ax = plt.subplots(
@@ -124,14 +125,14 @@ class PlotView(ttk.Frame):
         """Create UI controls for entry selection, filtering, and plotting options"""
         # --- Left Panel: Entry Selection ---
         left_panel = ttk.Frame(self)
-        left_panel.grid(row=0, column=0, sticky="nswe", padx=(0, 10))
-        left_panel.rowconfigure(1, weight=1)
+        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left_panel.rowconfigure(0, weight=1)  # Entry frame expands
         left_panel.columnconfigure(0, weight=1)
 
         # Entry selection listbox
         entry_frame = ttk.LabelFrame(left_panel, text="Select Entries", padding=10)
-        entry_frame.grid(row=0, column=0, sticky="nswe", pady=(0, 10))
-        entry_frame.rowconfigure(0, weight=1)
+        entry_frame.grid(row=0, column=0, sticky="nsew")
+        entry_frame.rowconfigure(0, weight=1)  # Listbox expands
         entry_frame.columnconfigure(0, weight=1)
 
         self.entry_listbox = Listbox(
@@ -140,7 +141,7 @@ class PlotView(ttk.Frame):
             exportselection=False,
             font=config.FONT_CONFIG.get("entry", ("Arial", 9)),
         )
-        self.entry_listbox.grid(row=0, column=0, sticky="nswe")
+        self.entry_listbox.grid(row=0, column=0, sticky="nsew")
         self.entry_listbox.bind("<<ListboxSelect>>", lambda e: self._on_selection_change())
         
         for label in self.entry_labels:
@@ -152,10 +153,11 @@ class PlotView(ttk.Frame):
         listbox_scroll.grid(row=0, column=1, sticky="ns")
         self.entry_listbox.config(yscrollcommand=listbox_scroll.set)
 
-        # --- Right Panel: Plot Controls ---
+        # --- Right Panel: Plot Area and Controls ---
         right_panel = ttk.Frame(self)
-        right_panel.grid(row=0, column=1, sticky="nswe")
-        right_panel.rowconfigure(1, weight=1)
+        right_panel.grid(row=0, column=1, sticky="nsew")
+        right_panel.rowconfigure(0, weight=0)  # Control bar - fixed height
+        right_panel.rowconfigure(1, weight=1)  # Plot area - expands
         right_panel.columnconfigure(0, weight=1)
 
         # Top control bar with clear data mode selection
@@ -205,21 +207,27 @@ class PlotView(ttk.Frame):
         
         ttk.Button(
             action_frame, 
-            text="🔄 Refresh Plot", 
+            text="🔄 Refresh", 
             command=self._refresh_plot
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(
             action_frame,
-            text="📊 Set Threshold",
+            text="📊 Threshold",
             command=self._open_threshold_dialog
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=2)
         
         ttk.Button(
             action_frame,
-            text="⚙️ Plot Options",
+            text="⚙️ Options",
             command=self._open_plot_options_dialog
-        ).pack(side=tk.LEFT, padx=5)
+        ).pack(side=tk.LEFT, padx=2)
+
+        # Plot container - this is where the matplotlib canvas goes
+        self.plot_container = ttk.Frame(right_panel)
+        self.plot_container.grid(row=1, column=0, sticky="nsew")
+        self.plot_container.columnconfigure(0, weight=1)
+        self.plot_container.rowconfigure(0, weight=1)
 
     def _open_threshold_dialog(self):
         """Open a popup dialog for threshold settings"""
@@ -569,12 +577,7 @@ class PlotView(ttk.Frame):
             self._refresh_plot()
 
     def _create_plot_area(self):
-        """Create the Matplotlib canvas"""
-        self.plot_container = ttk.Frame(self)
-        self.plot_container.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=10)
-        self.plot_container.columnconfigure(0, weight=1)
-        self.plot_container.rowconfigure(0, weight=1)
-
+        """Create the Matplotlib canvas - now embedded in plot_container created in _create_controls"""
         self.plot_canvas = FigureCanvasTkAgg(self.plot_figure, self.plot_container)
         self.plot_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
 
